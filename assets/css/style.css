@@ -1,0 +1,598 @@
+/* JASSNET Business Management System - Modern Professional Theme */
+
+:root {
+    --primary-color: #1e3c72;
+    --primary-light: #2a5298;
+    --primary-dark: #0a1a3f;
+    --secondary-color: #b71c1c;
+    --secondary-light: #e53935;
+    --secondary-dark: #7d0c0c;
+    --accent-color: #ff6f61;
+    --warning-color: #ffa500;
+    --danger-color: #c62828;
+    --info-color: #0277bd;
+    --success-color: #388e3c;
+    --dark-bg: #0f2027;
+    --light-bg: #f5f7fa;
+    --text-primary: #1a237e;
+    --text-secondary: #455a64;
+    --border-color: #cfd8dc;
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.12);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.15);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+* {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+body {
+    background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+    color: var(--text-primary);
+    overflow-x: hidden;
+    line-height: 1.6;
+}
+
+/* Cards */
+.card {
+    border: none;
+    border-radius: 12px;
+    box-shadow: var(--shadow-md);
+    margin-bottom: 24px;
+    background: white;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card:hover {
+    box-shadow: var(--shadow-lg);
+}
+
+.card-header {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%);
+    color: white;
+    border-radius: 12px 12px 0 0 !important;
+    font-weight: 700;
+    padding: 1.5rem;
+    border: none;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.card-body {
+    padding: 1.5rem;
+}
+
+.card-title {
+    color: var(--text-primary);
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+/* Buttons */
+.btn {
+    border-radius: 8px;
+    font-weight: 600;
+    padding: 0.6rem 1.5rem;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%);
+    color: white;
+    border: none;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-color) 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 102, 204, 0.3);
+    color: white;
+}
+
+.btn-secondary {
+    background: linear-gradient(135deg, var(--secondary-color) 0%, var(--secondary-light) 100%);
+    color: white;
+    border: none;
+}
+
+.btn-secondary:hover {
+    background: linear-gradient(135deg, var(--secondary-dark) 0%, var(--secondary-color) 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 168, 107, 0.3);
+    color: white;
+}
+
+.btn-danger {
+    background: var(--danger-color);
+    border: none;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(220, 53, 69, 0.3);
+    color: white;
+}
+
+.btn-outline-secondary {
+    border: 2px solid var(--primary-color);
+    color: var(--primary-color);
+    background: transparent;
+}
+
+.btn-outline-secondary:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
+.btn-sm {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.875rem;
+}
+
+/* Forms */
+.form-control,
+.form-select {
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    background-color: #fafbfc;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--primary-color);
+    background-color: white;
+    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+}
+
+.form-label {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+textarea.form-control {
+    resize: vertical;
+}
+
+/* Tables */
+.table {
+    background-color: white;
+    border-radius: 12px;
+    overflow: hidden;
+    border-collapse: collapse;
+}
+
+.table thead th {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%);
+    color: white;
+    border: none;
+    font-weight: 700;
+    padding: 1.2rem;
+    text-transform: uppercase;
+    font-size: 0.875rem;
+    letter-spacing: 0.5px;
+}
+
+.table tbody td {
+    padding: 1rem 1.2rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.table tbody tr {
+    transition: background-color 0.3s ease;
+}
+
+.table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: #fafbfc;
+}
+
+/* Alerts */
+.alert {
+    border: none;
+    border-radius: 10px;
+    padding: 1.2rem 1.5rem;
+    font-weight: 500;
+    animation: slideInDown 0.4s ease-out;
+}
+
+.alert-success {
+    background: linear-gradient(135deg, rgba(40, 167, 69, 0.1) 0%, rgba(0, 168, 107, 0.1) 100%);
+    color: var(--secondary-dark);
+    border-left: 4px solid var(--secondary-color);
+}
+
+.alert-danger {
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.1) 0%, rgba(255, 107, 107, 0.1) 100%);
+    color: #a71d33;
+    border-left: 4px solid var(--danger-color);
+}
+
+.alert-warning {
+    background: linear-gradient(135deg, rgba(255, 193, 7, 0.1) 0%, rgba(255, 152, 0, 0.1) 100%);
+    color: #856404;
+    border-left: 4px solid var(--warning-color);
+}
+
+.alert-info {
+    background: linear-gradient(135deg, rgba(23, 162, 184, 0.1) 0%, rgba(0, 200, 255, 0.1) 100%);
+    color: #0c5460;
+    border-left: 4px solid var(--info-color);
+}
+
+/* Status Badges */
+.badge {
+    border-radius: 20px;
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.badge-primary {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%);
+    color: white;
+}
+
+.badge-success {
+    background: linear-gradient(135deg, var(--success-color) 0%, var(--secondary-light) 100%);
+    color: white;
+}
+
+.badge-warning {
+    background: linear-gradient(135deg, var(--warning-color) 0%, #ffb300 100%);
+    color: white;
+}
+
+.badge-danger {
+    background: linear-gradient(135deg, var(--danger-color) 0%, #ff6b6b 100%);
+    color: white;
+}
+
+.badge-info {
+    background: linear-gradient(135deg, var(--info-color) 0%, #00d4ff 100%);
+    color: white;
+}
+
+/* Page Titles */
+h1, h2, h3, h4, h5, h6 {
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+h2 {
+    margin-bottom: 1.5rem;
+    font-size: 1.75rem;
+    letter-spacing: -0.5px;
+}
+
+/* Pagination */
+.pagination .page-link {
+    border: 2px solid var(--border-color);
+    color: var(--primary-color);
+    border-radius: 8px;
+    margin: 0 4px;
+    transition: all 0.3s ease;
+}
+
+.pagination .page-link:hover {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+}
+
+.pagination .page-item.active .page-link {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%);
+    border-color: var(--primary-color);
+}
+
+/* Dropdowns */
+.dropdown-menu {
+    border: none;
+    border-radius: 10px;
+    box-shadow: var(--shadow-lg);
+    animation: slideDown 0.3s ease-out;
+}
+
+.dropdown-item {
+    transition: all 0.2s ease;
+    color: var(--text-primary);
+}
+
+.dropdown-item:hover {
+    background: linear-gradient(135deg, rgba(0, 102, 204, 0.1) 0%, rgba(0, 168, 107, 0.1) 100%);
+    color: var(--primary-color);
+    padding-left: 1.5rem;
+}
+
+/* Modals */
+.modal-header {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%);
+    color: white;
+    border: none;
+    border-radius: 12px 12px 0 0;
+}
+
+.modal-header .btn-close {
+    filter: brightness(0) invert(1);
+}
+
+.modal-content {
+    border: none;
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+}
+
+/* Progress Bars */
+.progress {
+    background-color: var(--light-bg);
+    border-radius: 10px;
+    height: 10px;
+}
+
+.progress-bar {
+    background: linear-gradient(90deg, var(--primary-color) 0%, var(--primary-light) 100%);
+    border-radius: 10px;
+}
+
+/* Status Colors */
+.status-pending {
+    color: var(--warning-color);
+    font-weight: 600;
+}
+
+.status-approved {
+    color: var(--success-color);
+    font-weight: 600;
+}
+
+.status-completed {
+    color: var(--success-color);
+    font-weight: 600;
+}
+
+.status-rejected {
+    color: var(--danger-color);
+    font-weight: 600;
+}
+
+/* Animations */
+@keyframes slideInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.animate-slide-up {
+    animation: slideInUp 0.6s ease-out forwards;
+}
+
+.animate-slide-left {
+    animation: slideInLeft 0.6s ease-out forwards;
+}
+
+.animate-slide-right {
+    animation: slideInRight 0.6s ease-out forwards;
+}
+
+.animate-scale {
+    animation: scaleIn 0.6s ease-out forwards;
+}
+
+.animate-fade {
+    animation: fadeIn 0.6s ease-out forwards;
+}
+
+/* Stagger animations for multiple elements */
+.animate-stagger {
+    opacity: 0;
+}
+
+.animate-stagger:nth-child(1) {
+    animation: slideInUp 0.6s ease-out 0.1s forwards;
+}
+
+.animate-stagger:nth-child(2) {
+    animation: slideInUp 0.6s ease-out 0.2s forwards;
+}
+
+.animate-stagger:nth-child(3) {
+    animation: slideInUp 0.6s ease-out 0.3s forwards;
+}
+
+.animate-stagger:nth-child(4) {
+    animation: slideInUp 0.6s ease-out 0.4s forwards;
+}
+
+.animate-stagger:nth-child(5) {
+    animation: slideInUp 0.6s ease-out 0.5s forwards;
+}
+
+/* Card hover effects */
+.card {
+    transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-lg) !important;
+}
+
+/* Toast notifications */
+.toast-container {
+    z-index: 1050 !important;
+}
+
+.toast {
+    border-radius: 10px;
+    border: none;
+}
+
+/* List styles */
+.list-group-item {
+    border: 1px solid var(--border-color);
+    padding: 1rem;
+    transition: all 0.3s ease;
+}
+
+.list-group-item:first-child {
+    border-radius: 10px 10px 0 0;
+}
+
+.list-group-item:last-child {
+    border-radius: 0 0 10px 10px;
+}
+
+.list-group-item:hover {
+    background-color: var(--light-bg);
+    border-color: var(--primary-color);
+}
+
+/* Input groups */
+.input-group .form-control {
+    border-right: none;
+}
+
+.input-group .btn {
+    border: 2px solid var(--border-color);
+    border-left: none;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--light-bg);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--primary-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--primary-dark);
+}
+
+/* Dashboard Stat Cards */
+.bg-success {
+    background: linear-gradient(135deg, #388e3c 0%, #4caf50 100%) !important;
+    color: white !important;
+}
+
+.bg-info {
+    background: linear-gradient(135deg, #0277bd 0%, #0288d1 100%) !important;
+    color: white !important;
+}
+
+.bg-primary {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%) !important;
+    color: white !important;
+}
+
+.bg-warning {
+    background: linear-gradient(135deg, #f57c00 0%, #ff9800 100%) !important;
+    color: white !important;
+}
+
+.bg-danger {
+    background: linear-gradient(135deg, #c62828 0%, #e53935 100%) !important;
+    color: white !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .card {
+        margin-bottom: 16px;
+    }
+    
+    .btn {
+        padding: 0.5rem 1rem;
+    }
+    
+    h2 {
+        font-size: 1.5rem;
+    }
+}
