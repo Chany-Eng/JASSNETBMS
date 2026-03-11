@@ -19,7 +19,7 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     $request_id = intval($_GET['id']);
     
     // Fetch expense request details
-    $stmt = $conn->prepare("SELECT er.*, u.name as requested_by_name FROM expense_requests er JOIN users u ON er.requested_by = u.id WHERE er.id = ?");
+    $stmt = $conn->prepare("SELECT er.*, u.full_name as requested_by_name FROM expense_requests er JOIN users u ON er.requested_by = u.id WHERE er.id = ?");
     $stmt->bind_param("i", $request_id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -32,7 +32,7 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     
     // Fetch related payment if exists
     if ($expense_request) {
-        $stmt = $conn->prepare("SELECT ep.*, u.name as accountant_name FROM expense_payments ep LEFT JOIN users u ON ep.accountant_id = u.id WHERE ep.expense_request_id = ?");
+        $stmt = $conn->prepare("SELECT ep.*, u.full_name as accountant_name FROM expense_payments ep LEFT JOIN users u ON ep.accountant_id = u.id WHERE ep.expense_request_id = ?");
         $stmt->bind_param("i", $request_id);
         $stmt->execute();
         $result = $stmt->get_result();
@@ -96,8 +96,7 @@ include '../includes/header.php';
                                     <p><strong>Status:</strong> 
                                         <span class="badge bg-<?php 
                                             echo ($expense_request['status'] == 'Completed') ? 'success' : 
-                                                 ($expense_request['status'] == 'Rejected') ? 'danger' : 
-                                                 'warning'; 
+                                                 (($expense_request['status'] == 'Rejected') ? 'danger' : 'warning'); 
                                         ?>">
                                             <?php echo htmlspecialchars($expense_request['status']); ?>
                                         </span>
@@ -105,7 +104,7 @@ include '../includes/header.php';
                                     <p><strong>Project Reference:</strong> <?php echo htmlspecialchars($expense_request['project_ref'] ?: 'N/A'); ?></p>
                                     <p><strong>Amount Requested:</strong> 
                                         <span class="text-primary font-weight-bold">
-                                            $<?php echo number_format($expense_request['amount_requested'], 2); ?>
+                                            Tshs. <?php echo number_format($expense_request['amount_requested'], 2); ?>
                                         </span>
                                     </p>
                                 </div>
@@ -205,7 +204,7 @@ include '../includes/header.php';
                                     <div class="col-md-6">
                                         <p><strong>Amount Paid:</strong> 
                                             <span class="text-success font-weight-bold">
-                                                $<?php echo number_format($expense_payment['amount_paid'], 2); ?>
+                                                Tshs. <?php echo number_format($expense_payment['amount_paid'], 2); ?>
                                             </span>
                                         </p>
                                         <p><strong>Payment Method:</strong> <?php echo htmlspecialchars($expense_payment['payment_method']); ?></p>
@@ -240,7 +239,7 @@ include '../includes/header.php';
                                     <div class="col-md-6">
                                         <p><strong>Actual Amount:</strong> 
                                             <span class="text-primary font-weight-bold">
-                                                $<?php echo number_format($receipt['actual_amount'], 2); ?>
+                                                Tshs. <?php echo number_format($receipt['actual_amount'], 2); ?>
                                             </span>
                                         </p>
                                         <?php if ($receipt['notes']): ?>

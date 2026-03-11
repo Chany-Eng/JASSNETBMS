@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JASSNET Business Management System</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <?php
@@ -88,6 +88,29 @@
         }
         .sidebar.collapsed .sidebar-header .brand-icon {
             margin-bottom: 0;
+        }
+        .sidebar .menu .dropdown-toggle::after {
+            display: none;
+        }
+        .sidebar .menu .dropdown-toggle .fa-chevron-down {
+            transition: transform 0.3s;
+        }
+        .sidebar .menu .dropdown-toggle[aria-expanded="true"] .fa-chevron-down {
+            transform: rotate(180deg);
+        }
+        .sidebar .menu .collapse a {
+            padding: 10px 20px 10px 40px;
+            font-size: 0.9rem;
+            border-bottom: none;
+        }
+        .sidebar .menu .collapse a:hover {
+            background-color: #495057;
+            color: white;
+        }
+        .sidebar .menu .collapse a.active {
+            background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            border-left: 4px solid #ff6f61;
         }
         .main-content {
             margin-left: 250px;
@@ -173,20 +196,52 @@
                     <span>Dashboard</span>
                 </a>
             </li>
-            <?php if (hasPermission(['Sales', 'Technician', 'Super Admin'])): ?>
-            <li>
-                <a href="<?php echo $base_path; ?>pages/income.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'income.php' ? 'active' : ''; ?>">
+            <?php if (hasPermission(['Sales', 'Technician', 'Accountant', 'Super Admin'])): ?>
+            <li class="dropdown">
+                <a href="#" class="dropdown-toggle <?php echo in_array(basename($_SERVER['PHP_SELF']), ['add_income.php', 'view_income.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#incomeSubmenu">
                     <i class="fas fa-dollar-sign"></i>
                     <span>Income</span>
+                    <i class="fas fa-chevron-down float-end"></i>
                 </a>
+                <ul class="collapse list-unstyled ps-3" id="incomeSubmenu">
+                    <?php if (hasPermission(['Sales', 'Technician', 'Super Admin'])): ?>
+                    <li>
+                        <a href="<?php echo $base_path; ?>pages/add_income.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'add_income.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-plus"></i>
+                            <span>Add Income</span>
+                        </a>
+                    </li>
+                    <?php endif; ?>
+                    <li>
+                        <a href="<?php echo $base_path; ?>pages/view_income.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'view_income.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-list"></i>
+                            <span>View Income</span>
+                        </a>
+                    </li>
+                </ul>
             </li>
             <?php endif; ?>
             <?php if (hasPermission(['Sales', 'Technician', 'Manager', 'Director', 'Accountant', 'Super Admin'])): ?>
-            <li>
-                <a href="<?php echo $base_path; ?>pages/expenses.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'expenses.php' ? 'active' : ''; ?>">
+            <li class="dropdown">
+                <a href="#" class="dropdown-toggle <?php echo in_array(basename($_SERVER['PHP_SELF']), ['add_expense_request.php', 'view_expense_requests.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#expensesSubmenu">
                     <i class="fas fa-receipt"></i>
                     <span>Expenses</span>
+                    <i class="fas fa-chevron-down float-end"></i>
                 </a>
+                <ul class="collapse list-unstyled ps-3" id="expensesSubmenu">
+                    <li>
+                        <a href="<?php echo $base_path; ?>pages/add_expense_request.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'add_expense_request.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-plus"></i>
+                            <span>Add Request</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="<?php echo $base_path; ?>pages/view_expense_requests.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'view_expense_requests.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-list"></i>
+                            <span>View Requests</span>
+                        </a>
+                    </li>
+                </ul>
             </li>
             <?php endif; ?>
             <?php if (hasPermission(['Store Keeper', 'Manager', 'Super Admin'])): ?>
@@ -197,7 +252,7 @@
                 </a>
             </li>
             <?php endif; ?>
-            <?php if (hasPermission(['Technician', 'Sales', 'Manager', 'Director', 'Super Admin'])): ?>
+            <?php if (hasPermission(['Technician', 'Sales', 'Manager', 'Director', 'Accountant', 'Super Admin'])): ?>
             <li>
                 <a href="<?php echo $base_path; ?>pages/stations.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'stations.php' ? 'active' : ''; ?>">
                     <i class="fas fa-broadcast-tower"></i>

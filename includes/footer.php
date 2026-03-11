@@ -53,6 +53,46 @@
                     sidebarOverlay.classList.remove('show');
                 }
             });
+
+            // Handle sidebar dropdown menus
+            const dropdownToggles = sidebar.querySelectorAll('.dropdown-toggle');
+            dropdownToggles.forEach(toggle => {
+                toggle.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    
+                    // Close other dropdowns
+                    dropdownToggles.forEach(otherToggle => {
+                        if (otherToggle !== toggle) {
+                            const otherTarget = document.querySelector(otherToggle.getAttribute('data-bs-target'));
+                            if (otherTarget) {
+                                otherTarget.classList.remove('show');
+                                otherToggle.setAttribute('aria-expanded', 'false');
+                            }
+                        }
+                    });
+                    
+                    // Toggle current dropdown
+                    const target = document.querySelector(this.getAttribute('data-bs-target'));
+                    if (target) {
+                        const isExpanded = this.getAttribute('aria-expanded') === 'true';
+                        this.setAttribute('aria-expanded', !isExpanded);
+                        target.classList.toggle('show');
+                    }
+                });
+            });
+
+            // Close dropdowns when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!sidebar.contains(e.target)) {
+                    dropdownToggles.forEach(toggle => {
+                        const target = document.querySelector(toggle.getAttribute('data-bs-target'));
+                        if (target) {
+                            target.classList.remove('show');
+                            toggle.setAttribute('aria-expanded', 'false');
+                        }
+                    });
+                }
+            });
         });
     </script>
 </body>

@@ -101,7 +101,15 @@ function sanitize($data) {
 
 // Function to upload file
 function uploadFile($file, $target_dir = "uploads/") {
-    $target_file = $target_dir . basename($file["name"]);
+    // Use absolute path to ensure directory exists
+    $upload_dir = dirname(dirname(__FILE__)) . DIRECTORY_SEPARATOR . $target_dir;
+    
+    // Create directory if it doesn't exist
+    if (!is_dir($upload_dir)) {
+        mkdir($upload_dir, 0755, true);
+    }
+    
+    $target_file = $upload_dir . basename($file["name"]);
     $imageFileType = strtolower(pathinfo($target_file, PATHINFO_EXTENSION));
     
     // Check if file is actual image or PDF
@@ -116,12 +124,12 @@ function uploadFile($file, $target_dir = "uploads/") {
     
     // Generate unique filename
     $new_filename = uniqid() . "." . $imageFileType;
-    $target_file = $target_dir . $new_filename;
+    $target_file = $upload_dir . $new_filename;
     
     if (move_uploaded_file($file["tmp_name"], $target_file)) {
         return ["success" => $new_filename];
     } else {
-        return ["error" => "Error uploading file."];
+        return ["error" => "Error uploading file. Make sure the uploads directory exists and is writable."];
     }
 }
 

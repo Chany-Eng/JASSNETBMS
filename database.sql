@@ -123,7 +123,7 @@ CREATE TABLE station_requests (
     coverage_area VARCHAR(100),
     installation_type ENUM('Hotspot', 'Tower', 'Relay', 'Fiber Node'),
     total_estimated_cost DECIMAL(10,2),
-    status ENUM('Pending Approval', 'Approved', 'Equipment Issued', 'Installation in Progress', 'Completed', 'Rejected') DEFAULT 'Pending Approval',
+    status ENUM('Pending Approval', 'Approved', 'Awaiting Accountant Approval', 'Equipment Issued', 'Installation in Progress', 'Completed', 'Rejected') DEFAULT 'Pending Approval',
     approved_by INT,
     FOREIGN KEY (requested_by) REFERENCES users(id),
     FOREIGN KEY (approved_by) REFERENCES users(id)
@@ -151,6 +151,44 @@ CREATE TABLE station_progress (
     date DATE DEFAULT CURRENT_DATE,
     notes TEXT,
     FOREIGN KEY (station_request_id) REFERENCES station_requests(id)
+);
+
+-- Station costs table
+CREATE TABLE station_costs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    station_request_id INT,
+    actual_equipment_cost DECIMAL(10,2),
+    actual_installation_cost DECIMAL(10,2),
+    actual_transport_cost DECIMAL(10,2),
+    actual_labor_cost DECIMAL(10,2),
+    actual_misc_cost DECIMAL(10,2),
+    total_actual_cost DECIMAL(10,2),
+    cost_notes TEXT,
+    receipt_file VARCHAR(255),
+    approval_notes TEXT,
+    submitted_by INT,
+    submission_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (station_request_id) REFERENCES station_requests(id),
+    FOREIGN KEY (submitted_by) REFERENCES users(id)
+);
+
+-- Station completion table
+CREATE TABLE station_completion (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    station_request_id INT,
+    completion_date DATE DEFAULT CURRENT_DATE,
+    actual_equipment_cost DECIMAL(10,2),
+    actual_installation_cost DECIMAL(10,2),
+    actual_transport_cost DECIMAL(10,2),
+    actual_labor_cost DECIMAL(10,2),
+    actual_misc_cost DECIMAL(10,2),
+    total_actual_cost DECIMAL(10,2),
+    completion_notes TEXT,
+    receipt_file VARCHAR(255),
+    submitted_by INT,
+    submission_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (station_request_id) REFERENCES station_requests(id),
+    FOREIGN KEY (submitted_by) REFERENCES users(id)
 );
 
 -- Insert sample data for testing

@@ -1,0 +1,172 @@
+<?php
+require_once '../includes/functions.php';
+
+if (!isLoggedIn()) {
+    header("Location: ../index.php");
+    exit();
+}
+
+requirePermission(['Super Admin']);
+
+$message = '';
+$error = '';
+
+// Check for success message
+$success_message = isset($_SESSION['success_message']) ? $_SESSION['success_message'] : '';
+if ($success_message) {
+    unset($_SESSION['success_message']);
+}
+
+// helper to generate new employee IDs
+function generateEmployeeId($conn) {
+    $year = date('Y');
+    $prefix = "JSN/Z$year/";
+    $result = $conn->query("SELECT employee_id FROM users WHERE employee_id LIKE '$prefix%' ORDER BY id DESC LIMIT 1");
+    if ($result && $row = $result->fetch_assoc()) {
+        $last = $row['employee_id'];
+        $num = intval(substr($last, strrpos($last, '/') + 1));
+        $num++;
+    } else {
+        $num = 1;
+    }
+    return $prefix . str_pad($num, 4, '0', STR_PAD_LEFT);
+}
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if (isset($_POST['add_user'])) {
+        $username = sanitize($_POST['username']);
+        $plain_pass = $_POST['password'];
+        $password = password_hash($plain_pass, PASSWORD_DEFAULT);
+        // roles come as array
+        $roles = isset($_POST['role']) ? array_map('sanitize', $_POST['role']) : [];
+        $role = implode(',', $roles);
+        $full_name = sanitize($_POST['full_name']);
+        // auto-generate employee id
+        $employee_id = generateEmployeeId($conn);
+        $location = sanitize($_POST['location']);
+        $phone = sanitize($_POST['phone']);
+        $email = sanitize($_POST['email']);
+
+        $stmt = $conn->prepare("INSERT INTO users (username, password, role, full_name, employee_id, location, phone, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssssssss", $username, $password, $role, $full_name, $employee_id, $location, $phone, $email);
+
+        if ($stmt->execute()) {
+            $_SESSION['success_message'] = 'User added successfully';
+            header("Location: users.php");
+            exit();
+        } else {
+            $error = 'Error adding user';
+        }
+    }
+}
+?>
+
+<?php include '../includes/header.php'; ?>
+
+<?php if ($success_message): ?>
+    <div class="toast-container position-fixed top-0 end-0 p-3">
+        <div id="successToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" style="font-size: 1.2rem; padding: 1rem; min-width: 400px;">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="fas fa-check-circle me-2" style="font-size: 1.5rem;"></i> <?php echo $success_message; ?>
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    </div>
+<?php endif; ?>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h2><i class="fas fa-user-plus"></i> Add New User</h2>
+            <a href="users.php" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Users
+            </a>
+        </div>
+    </div>
+</div>
+
+<?php if ($message): ?>
+    <div class="alert alert-success"><?php echo $message; ?></div>
+<?php endif; ?>
+
+<?php if ($error): ?>
+    <div class="alert alert-danger"><?php echo $error; ?></div>
+<?php endif; ?>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-plus"></i> User Information</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="username" class="form-label">Username *</label>
+                                <input type="text" class="form-control" id="username" name="username" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="password" class="form-label">Password *</label>
+                                <input type="password" class="form-control" id="password" name="password" value="password" required>
+                                <div class="form-text">Default password is "password"</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="role" class="form-label">Roles *</label>
+                                <select class="form-select" id="role" name="role[]" multiple required>
+                                    <option value="Sales">Sales</option>
+                                    <option value="Technician">Technician</option>
+                                    <option value="Store Keeper">Store Keeper</option>
+                                    <option value="Manager">Manager</option>
+                                    <option value="Director">Director</option>
+                                    <option value="Accountant">Accountant</option>
+                                    <option value="Super Admin">Super Admin</option>
+                                </select>
+                                <div class="form-text">Hold Ctrl (Cmd on Mac) to select multiple roles.</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="full_name" class="form-label">Full Name *</label>
+                                <input type="text" class="form-control" id="full_name" name="full_name" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="employee_id" class="form-label">Employee ID *</label>
+                                <input type="text" class="form-control" id="employee_id" name="employee_id" readonly value="<?php echo generateEmployeeId($conn); ?>">
+                                <div class="form-text">Automatically generated</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="location" class="form-label">Location</label>
+                                <input type="text" class="form-control" id="location" name="location">
+                            </div>
+                            <div class="mb-3">
+                                <label for="phone" class="form-label">Phone Number</label>
+                                <input type="tel" class="form-control" id="phone" name="phone">
+                            </div>
+                            <div class="mb-3">
+                                <label for="email" class="form-label">Email Address</label>
+                                <input type="email" class="form-control" id="email" name="email">
+                            </div>
+                        </div>
+                    </div>
+                    <button type="submit" name="add_user" class="btn btn-primary">Add User</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const toast = document.getElementById('successToast');
+    if (toast) {
+        const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
+        bsToast.show();
+    }
+});
+</script>
+
+<?php include '../includes/footer.php'; ?>
