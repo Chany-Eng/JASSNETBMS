@@ -47,6 +47,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && hasPermission(['Accountant', 'Super
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $normalizeExpenseRequests = $conn->query("SELECT id FROM expense_requests WHERE status NOT IN ('Completed', 'Rejected') ORDER BY id DESC");
+    if ($normalizeExpenseRequests) {
+        while ($normalizeRow = $normalizeExpenseRequests->fetch_assoc()) {
+            expenseSyncPayoutStatus($conn, (int) $normalizeRow['id']);
+        }
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['approve_manager'])) {
         $request_id = intval($_POST['request_id']);

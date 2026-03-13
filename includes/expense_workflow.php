@@ -46,15 +46,21 @@ function expenseGetPayoutSummary(mysqli $conn, int $requestId): array
         'latest_payout_status' => '',
         'latest_failure_reason' => '',
         'can_wait_for_receipt' => false,
+        'current_status' => '',
+        'manager_approved' => false,
+        'director_approved' => false,
         'next_status' => 'Pending Accountant Processing',
     ];
 
-    $requestStmt = $conn->prepare('SELECT amount_requested FROM expense_requests WHERE id = ? LIMIT 1');
+    $requestStmt = $conn->prepare('SELECT amount_requested, status, manager_approved, director_approved FROM expense_requests WHERE id = ? LIMIT 1');
     if ($requestStmt) {
         $requestStmt->bind_param('i', $requestId);
         $requestStmt->execute();
         $requestRow = $requestStmt->get_result()->fetch_assoc() ?: [];
         $summary['amount_requested'] = (float) ($requestRow['amount_requested'] ?? 0);
+        $summary['current_status'] = (string) ($requestRow['status'] ?? '');
+        $summary['manager_approved'] = (int) ($requestRow['manager_approved'] ?? 0) === 1;
+        $summary['director_approved'] = (int) ($requestRow['director_approved'] ?? 0) === 1;
     }
 
     $paymentStmt = $conn->prepare('SELECT COALESCE(SUM(amount_paid), 0) AS total_paid FROM expense_payments WHERE expense_request_id = ?');
@@ -85,7 +91,16 @@ function expenseGetPayoutSummary(mysqli $conn, int $requestId): array
     $summary['latest_failure_reason'] = trim((string) (($summary['latest_payout']['failure_reason'] ?? '')));
     $summary['remaining_balance'] = max(0, $summary['amount_requested'] - $summary['total_paid']);
     $summary['can_wait_for_receipt'] = $summary['remaining_balance'] <= 0.00001 && !$summary['has_active_payout'];
-    $summary['next_status'] = $summary['can_wait_for_receipt'] ? 'Waiting for Receipt' : 'Pending Accountant Processing';
+
+    if (in_array($summary['current_status'], ['Completed', 'Rejected'], true)) {
+        $summary['next_status'] = $summary['current_status'];
+    } elseif (!$summary['manager_approved']) {
+        $summary['next_status'] = 'Pending Manager Approval';
+    } elseif (!$summary['director_approved']) {
+        $summary['next_status'] = 'Pending Director Approval';
+    } else {
+        $summary['next_status'] = $summary['can_wait_for_receipt'] ? 'Waiting for Receipt' : 'Pending Accountant Processing';
+    }
 
     return $summary;
 }
