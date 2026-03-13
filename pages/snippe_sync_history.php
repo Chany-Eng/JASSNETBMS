@@ -7,7 +7,7 @@ if (!isLoggedIn()) {
     exit();
 }
 
-requirePermission(['Sales', 'Accountant', 'Super Admin']);
+requirePermission(['Director', 'Super Admin']);
 
 $history = snippeGetSyncHistory($conn, 100);
 $latestSync = !empty($history) ? $history[0] : null;

@@ -89,7 +89,9 @@ class ExpenseRequest extends BaseModel
      */
     public function getPendingCount()
     {
-        return $this->count(['status' => EXPENSE_STATUS_PENDING]);
+        $this->db->prepare("SELECT COUNT(*) as count FROM $this->table WHERE status NOT IN ('Completed', 'Rejected')");
+        $result = $this->db->fetch();
+        return (int) ($result['count'] ?? 0);
     }
 
     /**
@@ -114,7 +116,9 @@ class ExpenseRequest extends BaseModel
      */
     public function getTotalApproved()
     {
-        return $this->getTotalByStatus(EXPENSE_STATUS_COMPLETED);
+        $this->db->prepare('SELECT COALESCE(SUM(amount_paid), 0) as total FROM expense_payments');
+        $result = $this->db->fetch();
+        return (float) ($result['total'] ?? 0);
     }
 
     /**
@@ -124,7 +128,9 @@ class ExpenseRequest extends BaseModel
      */
     public function getTotalPending()
     {
-        return $this->getTotalByStatus(EXPENSE_STATUS_PENDING);
+        $this->db->prepare("SELECT COALESCE(SUM(amount_requested), 0) as total FROM $this->table WHERE status NOT IN ('Completed', 'Rejected')");
+        $result = $this->db->fetch();
+        return (float) ($result['total'] ?? 0);
     }
 
     /**
@@ -230,8 +236,7 @@ class ExpenseRequest extends BaseModel
      */
     public function getMonthTotal($month)
     {
-        $this->db->prepare("SELECT SUM(amount_requested) as total FROM $this->table WHERE status = :status AND DATE_FORMAT(request_date, '%Y-%m') = :month");
-        $this->db->bind(':status', EXPENSE_STATUS_COMPLETED);
+        $this->db->prepare("SELECT COALESCE(SUM(ep.amount_paid), 0) as total FROM expense_payments ep JOIN expense_requests er ON er.id = ep.expense_request_id WHERE DATE_FORMAT(ep.payment_date, '%Y-%m') = :month");
         $this->db->bind(':month', $month);
         
         $result = $this->db->fetch();

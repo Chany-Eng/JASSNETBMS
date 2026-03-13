@@ -10,7 +10,7 @@ if (!isLoggedIn()) {
     exit();
 }
 
-if (!hasPermission(['Sales', 'Accountant', 'Super Admin'])) {
+if (!hasPermission(['Director', 'Super Admin'])) {
     http_response_code(403);
     echo json_encode(['ok' => false, 'message' => 'Forbidden']);
     exit();

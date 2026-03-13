@@ -150,32 +150,32 @@ class Income extends BaseModel
      */
     public function getTotalCustomers()
     {
-        $this->db->prepare("SELECT COUNT(DISTINCT customer_name) as cnt FROM $this->table");
+        $this->db->prepare("SELECT COUNT(DISTINCT COALESCE(NULLIF(phone, ''), customer_name)) as cnt FROM $this->table");
         $result = $this->db->fetch();
         return $result['cnt'] ?? 0;
     }
 
     /**
-     * Estimate active PPPoE users based on service_type 'Subscription'
+     * Count current-month active subscription customers.
      *
      * @return int
      */
     public function getActivePPPoEUsers()
     {
-        $this->db->prepare("SELECT COUNT(*) as cnt FROM $this->table WHERE service_type = :type");
+        $this->db->prepare("SELECT COUNT(DISTINCT COALESCE(NULLIF(phone, ''), customer_name)) as cnt FROM $this->table WHERE service_type = :type AND DATE_FORMAT(date, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')");
         $this->db->bind(':type', 'Subscription');
         $result = $this->db->fetch();
         return $result['cnt'] ?? 0;
     }
 
     /**
-     * Estimate active Hotspot users based on service_type 'WiFi Voucher'
+     * Count current-month active hotspot customers.
      *
      * @return int
      */
     public function getActiveHotspotUsers()
     {
-        $this->db->prepare("SELECT COUNT(*) as cnt FROM $this->table WHERE service_type = :type");
+        $this->db->prepare("SELECT COUNT(DISTINCT COALESCE(NULLIF(phone, ''), customer_name)) as cnt FROM $this->table WHERE service_type = :type AND DATE_FORMAT(date, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')");
         $this->db->bind(':type', 'WiFi Voucher');
         $result = $this->db->fetch();
         return $result['cnt'] ?? 0;

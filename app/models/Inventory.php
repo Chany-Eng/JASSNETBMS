@@ -33,7 +33,7 @@ class Inventory extends BaseModel
     {
         // `minimum_quantity` is not present in the current schema.
         // Use a practical low-stock threshold to avoid SQL errors.
-        $this->db->prepare("SELECT * FROM $this->table WHERE quantity <= :threshold ORDER BY quantity ASC");
+        $this->db->prepare("SELECT * FROM $this->table WHERE quantity <= :threshold AND COALESCE(is_deleted, 0) = 0 ORDER BY quantity ASC");
         $this->db->bind(':threshold', 5);
         return $this->db->fetchAll();
     }
@@ -79,7 +79,7 @@ class Inventory extends BaseModel
      */
     public function getTotalValue()
     {
-        $this->db->prepare("SELECT SUM(quantity * purchase_price) as total FROM $this->table");
+        $this->db->prepare("SELECT SUM(quantity * COALESCE(NULLIF(purchase_price, 0), selling_price, 0)) as total FROM $this->table WHERE COALESCE(is_deleted, 0) = 0");
         $result = $this->db->fetch();
         return $result['total'] ?? 0;
     }
@@ -157,11 +157,11 @@ class Inventory extends BaseModel
         $stats = [];
 
         // Total items
-        $this->db->prepare("SELECT COUNT(*) as count FROM $this->table");
+        $this->db->prepare("SELECT COUNT(*) as count FROM $this->table WHERE COALESCE(is_deleted, 0) = 0");
         $stats['total_items'] = $this->db->fetch()['count'] ?? 0;
 
         // Low stock items
-        $this->db->prepare("SELECT COUNT(*) as count FROM $this->table WHERE quantity <= :threshold");
+        $this->db->prepare("SELECT COUNT(*) as count FROM $this->table WHERE quantity <= :threshold AND COALESCE(is_deleted, 0) = 0");
         $this->db->bind(':threshold', 5);
         $stats['low_stock_items'] = $this->db->fetch()['count'] ?? 0;
 
@@ -169,7 +169,7 @@ class Inventory extends BaseModel
         $stats['total_value'] = $this->getTotalValue();
 
         // Items by category
-        $this->db->prepare("SELECT category, COUNT(*) as count FROM $this->table GROUP BY category");
+        $this->db->prepare("SELECT category, COUNT(*) as count FROM $this->table WHERE COALESCE(is_deleted, 0) = 0 GROUP BY category");
         $stats['by_category'] = $this->db->fetchAll();
 
         return $stats;

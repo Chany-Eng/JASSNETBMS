@@ -275,7 +275,7 @@
                     <?php endif; ?>
                 </ul>
             </li>
-            <?php if ($controller->hasPermission(['Sales', 'Accountant', 'Super Admin'])): ?>
+            <?php if ($controller->hasPermission(['Sales', 'Director', 'Super Admin'])): ?>
             <li class="dropdown">
                 <a href="#" class="dropdown-toggle <?= in_array(basename($_SERVER['PHP_SELF']), ['add_income.php', 'view_income.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#incomeSubmenu">
                     <i class="fas fa-dollar-sign"></i>
@@ -297,12 +297,14 @@
                             <span>View Income</span>
                         </a>
                     </li>
+                    <?php if ($controller->hasPermission(['Director', 'Super Admin'])): ?>
                     <li>
                         <a href="<?= APP_URL ?>/pages/snippe_sync_history.php" class="<?= basename($_SERVER['PHP_SELF']) == 'snippe_sync_history.php' ? 'active' : ''; ?>">
                             <i class="fas fa-history"></i>
                             <span>Snippe Sync History</span>
                         </a>
                     </li>
+                    <?php endif; ?>
                 </ul>
             </li>
             <?php endif; ?>
@@ -420,7 +422,7 @@
                 </ul>
             </li>
             <?php endif; ?>
-            <?php if ($controller->hasPermission(['Manager', 'Director', 'Accountant', 'Super Admin'])): ?>
+            <?php if ($controller->hasPermission(['Director', 'Super Admin'])): ?>
             <li>
                 <a href="<?= APP_URL ?>/pages/reports.php" class="<?= basename($_SERVER['PHP_SELF']) == 'reports.php' ? 'active' : ''; ?>">
                     <i class="fas fa-chart-bar"></i>

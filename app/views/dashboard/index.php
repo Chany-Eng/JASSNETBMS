@@ -47,6 +47,19 @@ $pageTitle = 'Dashboard';
 </style>
 
 <div class="container-fluid">
+    <?php
+    $permissions = $dashboard_permissions ?? [];
+    $canViewAllFinancials = !empty($permissions['can_view_all_financials']);
+    $canViewIncomeSummary = !empty($permissions['can_view_income']);
+    $canViewOwnIncome = !empty($permissions['can_view_own_income']);
+    $canViewExpenseSummary = !empty($permissions['can_view_expense_financials']);
+    $canViewExpenseOperations = !empty($permissions['can_view_expense_operations']);
+    $canViewInventorySummary = !empty($permissions['can_view_inventory_value']);
+    $canViewInventory = !empty($permissions['can_view_inventory']);
+    $canViewInventoryCharts = !empty($permissions['can_view_inventory_charts']);
+    $canViewStationCharts = !empty($permissions['can_view_station_charts']);
+    $canViewStations = !empty($permissions['can_view_stations']);
+    ?>
     <div class="row mb-4">
         <div class="col-12">
             <div class="dash-hero d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -56,7 +69,11 @@ $pageTitle = 'Dashboard';
                 </div>
                 <div class="text-end small">
                     <div>Today: <?= date('M d, Y') ?></div>
+                    <?php if ($canViewAllFinancials): ?>
                     <div>Net Profit: Tshs. <?= number_format($stats['net_profit'] ?? 0, 2) ?></div>
+                    <?php else: ?>
+                    <div>Role: <?= htmlspecialchars($user['role'] ?? 'User') ?></div>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -74,7 +91,7 @@ $pageTitle = 'Dashboard';
 
 
     <div class="row g-3 mb-4">
-        <?php if ($controller->hasPermission(['Sales', 'Super Admin'])): ?>
+        <?php if ($canViewAllFinancials): ?>
         <div class="col-md-4 col-xl-2">
             <div class="card kpi-card">
                 <div class="card-body">
@@ -86,22 +103,22 @@ $pageTitle = 'Dashboard';
         <div class="col-md-4 col-xl-2">
             <div class="card kpi-card">
                 <div class="card-body">
-                    <div class="kpi-title">Active PPPoE</div>
-                    <p class="kpi-value"><?= number_format($stats['active_pppoe_users'] ?? 0) ?></p>
+                    <div class="kpi-title">Snippe Hotspot Users</div>
+                    <p class="kpi-value"><?= number_format($stats['active_hotspot_users'] ?? 0) ?></p>
                 </div>
             </div>
         </div>
         <div class="col-md-4 col-xl-2">
             <div class="card kpi-card">
                 <div class="card-body">
-                    <div class="kpi-title">Active Hotspot</div>
-                    <p class="kpi-value"><?= number_format($stats['active_hotspot_users'] ?? 0) ?></p>
+                    <div class="kpi-title">Subscription Users</div>
+                    <p class="kpi-value"><?= number_format($stats['subscription_users'] ?? 0) ?></p>
                 </div>
             </div>
         </div>
         <?php endif; ?>
 
-        <?php if ($controller->hasPermission(['Sales', 'Accountant', 'Director', 'Super Admin'])): ?>
+        <?php if ($canViewIncomeSummary): ?>
         <div class="col-md-4 col-xl-2">
             <div class="card kpi-card">
                 <div class="card-body">
@@ -112,7 +129,18 @@ $pageTitle = 'Dashboard';
         </div>
         <?php endif; ?>
 
-        <?php if ($controller->hasPermission(['Accountant', 'Director', 'Super Admin'])): ?>
+        <?php if ($canViewOwnIncome): ?>
+        <div class="col-md-4 col-xl-2">
+            <div class="card kpi-card">
+                <div class="card-body">
+                    <div class="kpi-title">My Role</div>
+                    <p class="kpi-value"><?= htmlspecialchars($user['role'] ?? 'Sales') ?></p>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($canViewExpenseSummary): ?>
         <div class="col-md-4 col-xl-2">
             <div class="card kpi-card">
                 <div class="card-body">
@@ -123,7 +151,7 @@ $pageTitle = 'Dashboard';
         </div>
         <?php endif; ?>
 
-        <?php if ($controller->hasPermission(['Manager', 'Super Admin'])): ?>
+        <?php if ($canViewInventorySummary): ?>
         <div class="col-md-4 col-xl-2">
             <div class="card kpi-card">
                 <div class="card-body">
@@ -135,6 +163,7 @@ $pageTitle = 'Dashboard';
         <?php endif; ?>
     </div>
 
+    <?php if ($canViewAllFinancials): ?>
     <div class="row g-4 mb-4">
         <div class="col-xl-6">
             <div class="card">
@@ -153,8 +182,11 @@ $pageTitle = 'Dashboard';
             </div>
         </div>
     </div>
+    <?php endif; ?>
 
+    <?php if ($canViewInventoryCharts || $canViewStationCharts): ?>
     <div class="row g-4 mb-4">
+        <?php if ($canViewInventoryCharts): ?>
         <div class="col-xl-6">
             <div class="card">
                 <div class="card-header">Inventory Additions</div>
@@ -163,6 +195,8 @@ $pageTitle = 'Dashboard';
                 </div>
             </div>
         </div>
+        <?php endif; ?>
+        <?php if ($canViewStationCharts): ?>
         <div class="col-xl-6">
             <div class="card">
                 <div class="card-header">Station Progress</div>
@@ -171,12 +205,15 @@ $pageTitle = 'Dashboard';
                 </div>
             </div>
         </div>
+        <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <div class="row g-4 mb-4">
+        <?php if ($canViewIncomeSummary || $canViewOwnIncome): ?>
         <div class="col-lg-6">
             <div class="card">
-                <div class="card-header">Recent Income</div>
+                <div class="card-header"><?= $canViewAllFinancials ? 'Recent Income' : 'My Recent Income' ?></div>
                 <div class="card-body p-0">
                     <table class="table mb-0">
                         <thead><tr><th>Date</th><th>Customer</th><th>Amount</th></tr></thead>
@@ -197,9 +234,11 @@ $pageTitle = 'Dashboard';
                 </div>
             </div>
         </div>
+        <?php endif; ?>
+        <?php if ($canViewExpenseOperations): ?>
         <div class="col-lg-6">
             <div class="card">
-                <div class="card-header">Recent Expense Requests</div>
+            <div class="card-header"><?= $canViewExpenseSummary ? 'Recent Expense Requests' : 'My Recent Expense Requests' ?></div>
                 <div class="card-body p-0">
                     <table class="table mb-0">
                         <thead><tr><th>Date</th><th>Amount</th><th>Status</th></tr></thead>
@@ -220,9 +259,11 @@ $pageTitle = 'Dashboard';
                 </div>
             </div>
         </div>
+        <?php endif; ?>
     </div>
 
     <div class="row g-4">
+        <?php if ($canViewInventory): ?>
         <div class="col-lg-6">
             <div class="card">
                 <div class="card-header">Low Stock Alerts</div>
@@ -245,6 +286,8 @@ $pageTitle = 'Dashboard';
                 </div>
             </div>
         </div>
+        <?php endif; ?>
+        <?php if ($canViewStations): ?>
         <div class="col-lg-6">
             <div class="card">
                 <div class="card-header">New Station Requests</div>
@@ -268,6 +311,7 @@ $pageTitle = 'Dashboard';
                 </div>
             </div>
         </div>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -276,7 +320,9 @@ $pageTitle = 'Dashboard';
     const chartData = <?= json_encode($chart_data ?? ['months' => [], 'income' => [], 'expenses' => [], 'customerGrowth' => [], 'inventoryUsage' => [], 'stationProgress' => []]); ?>;
 
     document.addEventListener('DOMContentLoaded', function() {
-        new Chart(document.getElementById('incomeExpenseChart').getContext('2d'), {
+        const incomeExpenseCanvas = document.getElementById('incomeExpenseChart');
+        if (incomeExpenseCanvas) {
+        new Chart(incomeExpenseCanvas.getContext('2d'), {
             type: 'bar',
             data: {
                 labels: chartData.months,
@@ -298,8 +344,11 @@ $pageTitle = 'Dashboard';
                 plugins: { legend: { position: 'bottom' } }
             }
         });
+        }
 
-        new Chart(document.getElementById('customerGrowthChart').getContext('2d'), {
+        const customerGrowthCanvas = document.getElementById('customerGrowthChart');
+        if (customerGrowthCanvas) {
+        new Chart(customerGrowthCanvas.getContext('2d'), {
             type: 'line',
             data: {
                 labels: chartData.months,
@@ -317,8 +366,11 @@ $pageTitle = 'Dashboard';
                 plugins: { legend: { display: false } }
             }
         });
+        }
 
-        new Chart(document.getElementById('inventoryUsageChart').getContext('2d'), {
+        const inventoryCanvas = document.getElementById('inventoryUsageChart');
+        if (inventoryCanvas) {
+        new Chart(inventoryCanvas.getContext('2d'), {
             type: 'line',
             data: {
                 labels: chartData.months,
@@ -336,9 +388,12 @@ $pageTitle = 'Dashboard';
                 plugins: { legend: { display: false } }
             }
         });
+        }
 
         // station progress as stacked bar
-        const stationCtx = document.getElementById('stationProgressChart').getContext('2d');
+        const stationCanvas = document.getElementById('stationProgressChart');
+        if (stationCanvas) {
+        const stationCtx = stationCanvas.getContext('2d');
         const statuses = {};
         chartData.stationProgress.forEach((row, index) => {
             Object.keys(row).forEach(status => {
@@ -363,6 +418,7 @@ $pageTitle = 'Dashboard';
                 scales: { x: { stacked: true }, y: { stacked: true } }
             }
         });
+        }
 
     });
 </script>

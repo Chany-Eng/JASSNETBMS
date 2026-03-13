@@ -6,45 +6,162 @@ if (!isLoggedIn()) {
     exit();
 }
 
-requirePermission(['Manager', 'Director', 'Accountant', 'Super Admin']);
+requirePermission(['Director', 'Super Admin']);
 ensureInventorySoftDeleteSchema($conn);
 
 $message = '';
 $error = '';
 
+function reportsBuildRows(mysqli_result $result): array
+{
+    $rows = [];
+    while ($result && ($row = $result->fetch_assoc())) {
+        $rows[] = $row;
+    }
+    return $rows;
+}
+
+function reportsExportExcel(string $filename, array $headers, array $rows): void
+{
+    header('Content-Type: application/vnd.ms-excel; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '.xls"');
+
+    echo '<table border="1"><tr>';
+    foreach ($headers as $header) {
+        echo '<th>' . htmlspecialchars($header) . '</th>';
+    }
+    echo '</tr>';
+
+    foreach ($rows as $row) {
+        echo '<tr>';
+        foreach ($row as $value) {
+            echo '<td>' . htmlspecialchars((string) $value) . '</td>';
+        }
+        echo '</tr>';
+    }
+
+    echo '</table>';
+    exit();
+}
+
+function reportsExportPdf(string $title, array $headers, array $rows): void
+{
+    $pdfSafe = static function ($value): string {
+        $text = preg_replace('/\s+/', ' ', trim((string) ($value ?? '-')));
+        $text = iconv('UTF-8', 'Windows-1252//TRANSLIT//IGNORE', $text);
+        if ($text === false || $text === '') {
+            $text = '-';
+        }
+        return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $text);
+    };
+
+    $drawText = static function ($font, $size, $x, $y, $text) use ($pdfSafe): string {
+        return "BT /{$font} {$size} Tf {$x} {$y} Td (" . $pdfSafe($text) . ") Tj ET\n";
+    };
+
+    $lines = [];
+    $lines[] = $title . ' - ' . date('Y-m-d H:i');
+    $lines[] = implode(' | ', $headers);
+    $lines[] = str_repeat('-', 110);
+    foreach ($rows as $row) {
+        $rendered = [];
+        foreach ($row as $value) {
+            $text = trim((string) $value);
+            $rendered[] = strlen($text) > 24 ? substr($text, 0, 21) . '...' : ($text !== '' ? $text : '-');
+        }
+        $lines[] = implode(' | ', $rendered);
+    }
+
+    $stream = '';
+    $y = 800;
+    foreach ($lines as $line) {
+        $stream .= $drawText('F1', 10, 40, $y, $line);
+        $y -= 14;
+        if ($y < 40) {
+            break;
+        }
+    }
+
+    $objects = [];
+    $offsets = [];
+    $pdf = "%PDF-1.4\n";
+
+    $objects[] = "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n";
+    $objects[] = "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n";
+    $objects[] = "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n";
+    $objects[] = "4 0 obj << /Length " . strlen($stream) . " >> stream\n" . $stream . "endstream\nendobj\n";
+    $objects[] = "5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n";
+
+    foreach ($objects as $object) {
+        $offsets[] = strlen($pdf);
+        $pdf .= $object;
+    }
+
+    $xrefOffset = strlen($pdf);
+    $pdf .= "xref\n0 " . (count($objects) + 1) . "\n0000000000 65535 f \n";
+    foreach ($offsets as $offset) {
+        $pdf .= sprintf('%010d 00000 n ' . "\n", $offset);
+    }
+    $pdf .= "trailer << /Size " . (count($objects) + 1) . " /Root 1 0 R >>\nstartxref\n{$xrefOffset}\n%%EOF";
+
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="' . preg_replace('/[^A-Za-z0-9_-]/', '_', strtolower($title)) . '_' . date('Ymd_His') . '.pdf"');
+    echo $pdf;
+    exit();
+}
+
+function reportsGetDataset(mysqli $conn, string $reportType, string $startDate, string $endDate): array
+{
+    if ($reportType === 'income') {
+        $result = $conn->query("SELECT i.date, i.customer_name, i.service_type, FORMAT(i.amount, 2) AS amount, i.payment_method, u.full_name AS recorded_by FROM income i JOIN users u ON i.user_id = u.id WHERE i.date BETWEEN '$startDate' AND '$endDate' ORDER BY i.date DESC");
+        return [
+            'title' => 'Income Report',
+            'headers' => ['Date', 'Customer', 'Service Type', 'Amount', 'Payment Method', 'Recorded By'],
+            'rows' => reportsBuildRows($result),
+        ];
+    }
+
+    if ($reportType === 'expenses') {
+        $result = $conn->query("SELECT er.request_date, u.full_name AS requested_by, er.category, FORMAT(er.amount_requested, 2) AS amount_requested, FORMAT(COALESCE(p.total_paid, 0), 2) AS amount_paid, er.status FROM expense_requests er JOIN users u ON er.requested_by = u.id LEFT JOIN (SELECT expense_request_id, SUM(amount_paid) AS total_paid FROM expense_payments GROUP BY expense_request_id) p ON p.expense_request_id = er.id WHERE er.request_date BETWEEN '$startDate' AND '$endDate' ORDER BY er.request_date DESC");
+        return [
+            'title' => 'Expense Report',
+            'headers' => ['Date', 'Requested By', 'Category', 'Amount Requested', 'Amount Paid', 'Status'],
+            'rows' => reportsBuildRows($result),
+        ];
+    }
+
+    $result = $conn->query("SELECT item_name, category, quantity, FORMAT(COALESCE(NULLIF(purchase_price, 0), selling_price, 0), 2) AS unit_value, FORMAT(quantity * COALESCE(NULLIF(purchase_price, 0), selling_price, 0), 2) AS total_value, supplier, status FROM inventory WHERE COALESCE(is_deleted, 0) = 0 ORDER BY category, item_name");
+    return [
+        'title' => 'Inventory Report',
+        'headers' => ['Item Name', 'Category', 'Quantity', 'Unit Value', 'Total Value', 'Supplier', 'Status'],
+        'rows' => reportsBuildRows($result),
+    ];
+}
+
 if (isset($_GET['export'])) {
     $report_type = $_GET['export'];
     $start_date = $_GET['start_date'] ?? date('Y-m-01');
     $end_date = $_GET['end_date'] ?? date('Y-m-d');
-    
+
+    $format = $_GET['format'] ?? 'csv';
+    $dataset = reportsGetDataset($conn, $report_type, $start_date, $end_date);
+
+    if ($format === 'excel') {
+        reportsExportExcel($report_type . '_report_' . date('Y-m-d'), $dataset['headers'], $dataset['rows']);
+    }
+
+    if ($format === 'pdf') {
+        reportsExportPdf($dataset['title'], $dataset['headers'], $dataset['rows']);
+    }
+
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="' . $report_type . '_report_' . date('Y-m-d') . '.csv"');
-    
+
     $output = fopen('php://output', 'w');
-    
-    if ($report_type == 'income') {
-        fputcsv($output, ['Date', 'Customer', 'Service Type', 'Amount', 'Payment Method', 'Recorded By']);
-        
-        $result = $conn->query("SELECT i.date, i.customer_name, i.service_type, i.amount, i.payment_method, u.full_name FROM income i JOIN users u ON i.user_id = u.id WHERE i.date BETWEEN '$start_date' AND '$end_date' ORDER BY i.date");
-        while ($row = $result->fetch_assoc()) {
-            fputcsv($output, $row);
-        }
-    } elseif ($report_type == 'expenses') {
-        fputcsv($output, ['Date', 'Requested By', 'Category', 'Amount Requested', 'Amount Paid', 'Status']);
-        
-        $result = $conn->query("SELECT er.request_date, u.full_name, er.category, er.amount_requested, COALESCE(ep.amount_paid, 0) as amount_paid, er.status FROM expense_requests er JOIN users u ON er.requested_by = u.id LEFT JOIN expense_payments ep ON er.id = ep.expense_request_id WHERE er.request_date BETWEEN '$start_date' AND '$end_date' ORDER BY er.request_date");
-        while ($row = $result->fetch_assoc()) {
-            fputcsv($output, $row);
-        }
-    } elseif ($report_type == 'inventory') {
-        fputcsv($output, ['Item Name', 'Category', 'Quantity', 'Purchase Price', 'Selling Price', 'Supplier', 'Status']);
-        
-        $result = $conn->query("SELECT item_name, category, quantity, purchase_price, selling_price, supplier, status FROM inventory WHERE COALESCE(is_deleted, 0) = 0 ORDER BY category, item_name");
-        while ($row = $result->fetch_assoc()) {
-            fputcsv($output, $row);
-        }
+    fputcsv($output, $dataset['headers']);
+    foreach ($dataset['rows'] as $row) {
+        fputcsv($output, $row);
     }
-    
     fclose($output);
     exit();
 }
@@ -54,11 +171,11 @@ $start_date = $_GET['start_date'] ?? date('Y-m-01');
 $end_date = $_GET['end_date'] ?? date('Y-m-d');
 
 // Income summary
-$income_result = $conn->query("SELECT SUM(amount) as total, COUNT(*) as count FROM income WHERE date BETWEEN '$start_date' AND '$end_date'");
+$income_result = $conn->query("SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM income WHERE date BETWEEN '$start_date' AND '$end_date'");
 $income_summary = $income_result->fetch_assoc();
 
 // Expense summary
-$expense_result = $conn->query("SELECT SUM(amount_requested) as total_requested, SUM(COALESCE(ep.amount_paid, 0)) as total_paid, COUNT(*) as count FROM expense_requests er LEFT JOIN expense_payments ep ON er.id = ep.expense_request_id WHERE er.request_date BETWEEN '$start_date' AND '$end_date'");
+$expense_result = $conn->query("SELECT COALESCE(SUM(er.amount_requested), 0) as total_requested, COALESCE(SUM(p.total_paid), 0) as total_paid, COUNT(*) as count FROM expense_requests er LEFT JOIN (SELECT expense_request_id, SUM(amount_paid) AS total_paid FROM expense_payments GROUP BY expense_request_id) p ON p.expense_request_id = er.id WHERE er.request_date BETWEEN '$start_date' AND '$end_date'");
 $expense_summary = $expense_result->fetch_assoc();
 
 // Inventory summary
@@ -146,7 +263,11 @@ $low_stock_count = $low_stock_result->fetch_assoc()['count'];
         <div class="card">
             <div class="card-header">
                 <h5><i class="fas fa-dollar-sign"></i> Income Report</h5>
-                <a href="?export=income&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-primary">Export CSV</a>
+                <div class="d-flex gap-2 flex-wrap">
+                    <a href="?export=income&format=csv&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-primary">Export CSV</a>
+                    <a href="?export=income&format=excel&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-success">Export Excel</a>
+                    <a href="?export=income&format=pdf&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-danger">Export PDF</a>
+                </div>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -181,7 +302,11 @@ $low_stock_count = $low_stock_result->fetch_assoc()['count'];
         <div class="card">
             <div class="card-header">
                 <h5><i class="fas fa-receipt"></i> Expense Report</h5>
-                <a href="?export=expenses&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-primary">Export CSV</a>
+                <div class="d-flex gap-2 flex-wrap">
+                    <a href="?export=expenses&format=csv&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-primary">Export CSV</a>
+                    <a href="?export=expenses&format=excel&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-success">Export Excel</a>
+                    <a href="?export=expenses&format=pdf&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-danger">Export PDF</a>
+                </div>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -225,7 +350,11 @@ $low_stock_count = $low_stock_result->fetch_assoc()['count'];
         <div class="card">
             <div class="card-header">
                 <h5><i class="fas fa-boxes"></i> Inventory Report</h5>
-                <a href="?export=inventory" class="btn btn-sm btn-outline-primary">Export CSV</a>
+                <div class="d-flex gap-2 flex-wrap">
+                    <a href="?export=inventory&format=csv" class="btn btn-sm btn-outline-primary">Export CSV</a>
+                    <a href="?export=inventory&format=excel" class="btn btn-sm btn-outline-success">Export Excel</a>
+                    <a href="?export=inventory&format=pdf" class="btn btn-sm btn-outline-danger">Export PDF</a>
+                </div>
             </div>
             <div class="card-body">
                 <div class="table-responsive">

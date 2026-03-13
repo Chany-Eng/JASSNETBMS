@@ -7,7 +7,10 @@ if (!isLoggedIn()) {
     exit();
 }
 
-requirePermission(['Sales', 'Accountant', 'Super Admin']);
+requirePermission(['Sales', 'Director', 'Super Admin']);
+
+$canRunSnippeSync = hasPermission(['Director', 'Super Admin']);
+$isSalesOnlyIncomeView = hasPermission(['Sales']) && !$canRunSnippeSync;
 
 $message = '';
 $error = '';
@@ -20,7 +23,7 @@ if ($success_message) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_snippe_payments'])) {
-    if (!hasPermission(['Sales', 'Accountant', 'Super Admin'])) {
+    if (!$canRunSnippeSync) {
         $error = 'You are not authorized to sync Snippe payments.';
     } else {
         $limitInput = intval($_POST['snippe_limit'] ?? 20);
@@ -38,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_snippe_payments'
     }
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $canRunSnippeSync) {
     $autoSyncResult = snippeAutoSyncIfDue($conn, (int) $_SESSION['user_id']);
     if ($autoSyncResult && empty($autoSyncResult['skipped'])) {
         if ($autoSyncResult['ok']) {
@@ -62,12 +65,21 @@ if (!in_array($limit, $allowedPerPage, true)) {
 $offset = ($page - 1) * $limit;
 
 $search = isset($_GET['search']) ? sanitize($_GET['search']) : '';
-$where_clause = '';
+$whereConditions = [];
 if ($search) {
-    $where_clause = " WHERE (customer_name LIKE '%$search%' OR service_type LIKE '%$search%' OR transaction_reference LIKE '%$search%')";
+    $whereConditions[] = "(customer_name LIKE '%$search%' OR service_type LIKE '%$search%' OR transaction_reference LIKE '%$search%')";
 }
 
-$total_result = $conn->query("SELECT COUNT(*) as count FROM income $where_clause");
+if ($isSalesOnlyIncomeView) {
+    $whereConditions[] = 'i.user_id = ' . (int) $_SESSION['user_id'];
+}
+
+$where_clause = '';
+if (!empty($whereConditions)) {
+    $where_clause = ' WHERE ' . implode(' AND ', $whereConditions);
+}
+
+$total_result = $conn->query("SELECT COUNT(*) as count FROM income i $where_clause");
 $total_records = $total_result->fetch_assoc()['count'];
 $total_pages = ceil($total_records / $limit);
 
@@ -132,9 +144,11 @@ include '../includes/header.php';
                         <i class="fas fa-plus"></i> Add Income
                     </a>
                     <?php endif; ?>
+                    <?php if ($canRunSnippeSync): ?>
                     <a href="snippe_sync_history.php" class="btn btn-outline-light">
                         <i class="fas fa-history"></i> Sync History
                     </a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -221,6 +235,7 @@ include '../includes/header.php';
                 </div>
             </div>
         </div>
+        <?php if ($canRunSnippeSync): ?>
         <div class="col-xl-4">
             <div class="card h-100">
                 <div class="card-header">
@@ -260,6 +275,7 @@ include '../includes/header.php';
                 </div>
             </div>
         </div>
+        <?php endif; ?>
     </div>
 
     <div class="row">

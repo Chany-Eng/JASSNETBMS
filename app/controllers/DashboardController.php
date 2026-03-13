@@ -17,6 +17,7 @@ class DashboardController extends BaseController
     private $expenseModel;
     private $inventoryModel;
     private $stationModel;
+    private $stationAssignedToExists;
 
     public function __construct()
     {
@@ -34,17 +35,19 @@ class DashboardController extends BaseController
     public function index()
     {
         $message = $this->getMessage();
+        $permissions = $this->getDashboardPermissions();
 
         try {
             $this->data = [
                 'user' => $this->user,
                 'stats' => $this->getStats(),
                 'message' => $message,
-                'recent_income' => $this->incomeModel->getRecent(5),
-                'recent_expenses' => $this->expenseModel->getRecent(5),
-                'recent_stations' => $this->stationModel->getRecent(5),
-                'low_stock_items' => $this->inventoryModel->getLowStock(),
-                'chart_data' => $this->getChartData(),
+                'recent_income' => $this->getRecentIncome(5),
+                'recent_expenses' => $this->getRecentExpenses(5),
+                'recent_stations' => $this->getRecentStations(5),
+                'low_stock_items' => $this->getRecentLowStock(),
+                'chart_data' => $this->getChartData($permissions),
+                'dashboard_permissions' => $permissions,
             ];
         } catch (\Throwable $e) {
             if (APP_DEBUG) {
@@ -72,6 +75,7 @@ class DashboardController extends BaseController
                     'inventoryUsage' => [],
                     'stationProgress' => [],
                 ],
+                'dashboard_permissions' => $permissions,
             ];
         }
 
@@ -230,34 +234,130 @@ class DashboardController extends BaseController
     private function getStats()
     {
         $stats = [];
+        $permissions = $this->getDashboardPermissions();
 
         // Income stats
-        $stats['income_today'] = $this->incomeModel->getTodayTotal();
-        $stats['income_week'] = $this->incomeModel->getWeekTotal();
-        $stats['income_month'] = $this->incomeModel->getMonthTotal();
-
-        // customer counts inferred from income records
-        $stats['total_customers'] = $this->incomeModel->getTotalCustomers();
-        $stats['active_pppoe_users'] = $this->incomeModel->getActivePPPoEUsers();
-        $stats['active_hotspot_users'] = $this->incomeModel->getActiveHotspotUsers();
+        if ($permissions['can_view_all_financials']) {
+            $stats['income_today'] = $this->incomeModel->getTodayTotal();
+            $stats['income_week'] = $this->incomeModel->getWeekTotal();
+            $stats['income_month'] = $this->incomeModel->getMonthTotal();
+            $stats['total_customers'] = $this->incomeModel->getTotalCustomers();
+            $stats['subscription_users'] = $this->incomeModel->getActivePPPoEUsers();
+            $stats['active_hotspot_users'] = $this->incomeModel->getActiveHotspotUsers();
+        } else {
+            $stats['income_today'] = 0;
+            $stats['income_week'] = 0;
+            $stats['income_month'] = 0;
+            $stats['total_customers'] = 0;
+            $stats['subscription_users'] = 0;
+            $stats['active_hotspot_users'] = 0;
+        }
 
         // Expense stats
-        $stats['approved_expenses'] = $this->expenseModel->getTotalApproved();
-        $stats['pending_requests'] = $this->expenseModel->getPendingCount();
-        $stats['pending_expenses_total'] = $this->expenseModel->getTotalPending();
+        $stats['approved_expenses'] = $permissions['can_view_expense_financials'] ? $this->expenseModel->getTotalApproved() : 0;
+        $stats['pending_requests'] = $permissions['can_view_expense_operations'] ? $this->expenseModel->getPendingCount() : 0;
+        $stats['pending_expenses_total'] = $permissions['can_view_expense_operations'] ? $this->expenseModel->getTotalPending() : 0;
 
         // Inventory stats
-        $stats['low_stock'] = count($this->inventoryModel->getLowStock());
-        $stats['inventory_value'] = $this->inventoryModel->getTotalValue();
+        $stats['low_stock'] = $permissions['can_view_inventory'] ? count($this->inventoryModel->getLowStock()) : 0;
+        $stats['inventory_value'] = $permissions['can_view_inventory_value'] ? $this->inventoryModel->getTotalValue() : 0;
 
         // Station stats
-        $stats['pending_stations'] = $this->stationModel->getPendingCount();
-        $stats['total_estimated_cost'] = $this->stationModel->getTotalEstimatedCost();
+        $stats['pending_stations'] = $permissions['can_view_stations'] ? $this->stationModel->getPendingCount() : 0;
+        $stats['total_estimated_cost'] = $permissions['can_view_all_financials'] ? $this->stationModel->getTotalEstimatedCost() : 0;
 
         // Net profit
-        $stats['net_profit'] = $stats['income_month'] - $stats['approved_expenses'];
+        $stats['net_profit'] = $permissions['can_view_all_financials'] ? ($stats['income_month'] - $stats['approved_expenses']) : 0;
 
         return $stats;
+    }
+
+    private function getDashboardPermissions(): array
+    {
+        return [
+            'can_view_all_financials' => $this->hasPermission(['Director', 'Super Admin']),
+            'can_view_income' => $this->hasPermission(['Director', 'Super Admin']),
+            'can_view_own_income' => $this->hasPermission(['Sales']) && !$this->hasPermission(['Director', 'Super Admin']),
+            'can_view_expense_financials' => $this->hasPermission(['Accountant', 'Director', 'Super Admin']),
+            'can_view_expense_operations' => $this->hasPermission(['Sales', 'Technician', 'Manager', 'Accountant', 'Director', 'Super Admin']),
+            'can_view_inventory' => $this->hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin']),
+            'can_view_inventory_value' => $this->hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin']),
+            'can_view_station_charts' => $this->hasPermission(['Technician', 'Manager', 'Director', 'Super Admin']),
+            'can_view_inventory_charts' => $this->hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin']),
+            'can_view_stations' => $this->hasPermission(['Technician', 'Manager', 'Director', 'Super Admin']),
+        ];
+    }
+
+    private function getRecentIncome(int $limit): array
+    {
+        if ($this->hasPermission(['Director', 'Super Admin'])) {
+            return $this->incomeModel->getRecent($limit);
+        }
+
+        if ($this->hasPermission(['Sales'])) {
+            $this->db->prepare("SELECT * FROM {$this->incomeModel->getTable()} WHERE user_id = :user_id ORDER BY date DESC LIMIT {$limit}");
+            $this->db->bind(':user_id', (int) $this->user['id']);
+            return $this->db->fetchAll();
+        }
+
+        return [];
+    }
+
+    private function getRecentExpenses(int $limit): array
+    {
+        if ($this->hasPermission(['Manager', 'Accountant', 'Director', 'Super Admin'])) {
+            return $this->expenseModel->getRecent($limit);
+        }
+
+        if ($this->hasPermission(['Sales', 'Technician'])) {
+            $this->db->prepare("SELECT * FROM {$this->expenseModel->getTable()} WHERE requested_by = :user_id ORDER BY request_date DESC LIMIT {$limit}");
+            $this->db->bind(':user_id', (int) $this->user['id']);
+            return $this->db->fetchAll();
+        }
+
+        return [];
+    }
+
+    private function getRecentStations(int $limit): array
+    {
+        if ($this->hasPermission(['Manager', 'Director', 'Super Admin'])) {
+            return $this->stationModel->getRecent($limit);
+        }
+
+        if ($this->hasPermission(['Technician'])) {
+            $table = $this->stationModel->getTable();
+            if ($this->stationAssignedToExists()) {
+                $this->db->prepare("SELECT * FROM {$table} WHERE requested_by = :user_id OR assigned_to = :user_id ORDER BY request_date DESC LIMIT {$limit}");
+            } else {
+                $this->db->prepare("SELECT * FROM {$table} WHERE requested_by = :user_id ORDER BY request_date DESC LIMIT {$limit}");
+            }
+            $this->db->bind(':user_id', (int) $this->user['id']);
+            return $this->db->fetchAll();
+        }
+
+        return [];
+    }
+
+    private function stationAssignedToExists(): bool
+    {
+        if ($this->stationAssignedToExists !== null) {
+            return $this->stationAssignedToExists;
+        }
+
+        $table = $this->stationModel->getTable();
+        $this->db->prepare("SHOW COLUMNS FROM {$table} LIKE 'assigned_to'");
+        $this->stationAssignedToExists = (bool) $this->db->fetch();
+
+        return $this->stationAssignedToExists;
+    }
+
+    private function getRecentLowStock(): array
+    {
+        if (!$this->hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin'])) {
+            return [];
+        }
+
+        return $this->inventoryModel->getLowStock();
     }
 
     /**
@@ -269,8 +369,9 @@ class DashboardController extends BaseController
             $this->json(['error' => 'Invalid request method'], 400);
         }
 
+        $permissions = $this->getDashboardPermissions();
         $stats = $this->getStats();
-        $charts = $this->getChartData();
+        $charts = $this->getChartData($permissions);
         $this->json([
             'success' => true,
             'stats' => $stats,
@@ -283,7 +384,7 @@ class DashboardController extends BaseController
      *
      * @return array
      */
-    private function getChartData()
+    private function getChartData(array $permissions)
     {
         $months = [];
         $incomeData = [];
@@ -301,32 +402,41 @@ class DashboardController extends BaseController
             $monthEnd = date('Y-m-t', strtotime($monthStart));
 
             // income and expenses
-            $incomeData[] = $this->incomeModel->getTotalByDateRange($monthStart, $monthEnd);
-            $expenseData[] = $this->expenseModel->getTotalByDateRange($monthStart, $monthEnd);
+            $incomeData[] = $permissions['can_view_all_financials'] ? $this->incomeModel->getTotalByDateRange($monthStart, $monthEnd) : 0;
+            $expenseData[] = $permissions['can_view_all_financials'] ? $this->expenseModel->getMonthTotal(date('Y-m', strtotime($monthStart))) : 0;
 
             // customer growth - distinct customers per month
-            $this->db->prepare("SELECT COUNT(DISTINCT customer_name) as cnt FROM {$this->incomeModel->getTable()} WHERE date BETWEEN :start AND :end");
-            $this->db->bind(':start', $monthStart);
-            $this->db->bind(':end', $monthEnd);
-            $res = $this->db->fetch();
-            $customerGrowth[] = $res['cnt'] ?? 0;
+            if ($permissions['can_view_all_financials']) {
+                $this->db->prepare("SELECT COUNT(DISTINCT COALESCE(NULLIF(phone, ''), customer_name)) as cnt FROM {$this->incomeModel->getTable()} WHERE date BETWEEN :start AND :end");
+                $this->db->bind(':start', $monthStart);
+                $this->db->bind(':end', $monthEnd);
+                $res = $this->db->fetch();
+                $customerGrowth[] = $res['cnt'] ?? 0;
+            } else {
+                $customerGrowth[] = 0;
+            }
 
             // inventory usage placeholder (could be number of issued items this month)
-            $this->db->prepare("SELECT COUNT(*) as cnt FROM inventory WHERE purchase_date BETWEEN :start AND :end");
-            $this->db->bind(':start', $monthStart);
-            $this->db->bind(':end', $monthEnd);
-            $inv = $this->db->fetch();
-            $inventoryUsage[] = $inv['cnt'] ?? 0;
+            if ($permissions['can_view_inventory_charts']) {
+                $this->db->prepare("SELECT COUNT(*) as cnt FROM inventory WHERE COALESCE(is_deleted, 0) = 0 AND purchase_date BETWEEN :start AND :end");
+                $this->db->bind(':start', $monthStart);
+                $this->db->bind(':end', $monthEnd);
+                $inv = $this->db->fetch();
+                $inventoryUsage[] = $inv['cnt'] ?? 0;
+            } else {
+                $inventoryUsage[] = 0;
+            }
 
             // station progress counts this month
-            $this->db->prepare("SELECT status, COUNT(*) as cnt FROM {$this->stationModel->getTable()} WHERE request_date BETWEEN :start AND :end GROUP BY status");
-            $this->db->bind(':start', $monthStart);
-            $this->db->bind(':end', $monthEnd);
-            $stationRows = $this->db->fetchAll();
-            // convert to associative array of status counts
             $statusCounts = [];
-            foreach ($stationRows as $row) {
-                $statusCounts[$row['status']] = $row['cnt'];
+            if ($permissions['can_view_station_charts']) {
+                $this->db->prepare("SELECT status, COUNT(*) as cnt FROM {$this->stationModel->getTable()} WHERE request_date BETWEEN :start AND :end GROUP BY status");
+                $this->db->bind(':start', $monthStart);
+                $this->db->bind(':end', $monthEnd);
+                $stationRows = $this->db->fetchAll();
+                foreach ($stationRows as $row) {
+                    $statusCounts[$row['status']] = $row['cnt'];
+                }
             }
             $stationProgress[] = $statusCounts;
         }
