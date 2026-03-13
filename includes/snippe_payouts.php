@@ -115,11 +115,15 @@ function snippeRenderBankOptions(string $selected = ''): string
 function snippeEnsureUserPayoutFields(mysqli $conn): void
 {
     $columns = [
+        'first_name' => "ALTER TABLE users ADD COLUMN first_name VARCHAR(100) NULL AFTER full_name",
+        'middle_name' => "ALTER TABLE users ADD COLUMN middle_name VARCHAR(100) NULL AFTER first_name",
+        'last_name' => "ALTER TABLE users ADD COLUMN last_name VARCHAR(100) NULL AFTER middle_name",
         'gender' => "ALTER TABLE users ADD COLUMN gender VARCHAR(20) NULL AFTER full_name",
         'bank_name' => "ALTER TABLE users ADD COLUMN bank_name VARCHAR(100) NULL AFTER email",
         'bank_account_number' => "ALTER TABLE users ADD COLUMN bank_account_number VARCHAR(50) NULL AFTER bank_name",
         'payout_phone' => "ALTER TABLE users ADD COLUMN payout_phone VARCHAR(20) NULL AFTER bank_account_number",
         'preferred_payout_channel' => "ALTER TABLE users ADD COLUMN preferred_payout_channel VARCHAR(20) NOT NULL DEFAULT 'mobile' AFTER payout_phone",
+        'id_number' => "ALTER TABLE users ADD COLUMN id_number VARCHAR(100) NULL AFTER employee_id",
     ];
 
     foreach ($columns as $column => $sql) {

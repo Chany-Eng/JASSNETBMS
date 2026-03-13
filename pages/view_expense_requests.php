@@ -66,6 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Pending Director Approval', manager_approved = 1, manager_comment = ? WHERE id = ? AND status = 'Pending Manager Approval'");
             $stmt->bind_param("si", $manager_comment, $request_id);
             $stmt->execute();
+            appLogActivity($conn, 'APPROVE_EXPENSE_MANAGER', 'Manager approved expense request #' . $request_id, 'expense_requests', $request_id);
             $message = 'Expense request approved by manager';
         }
     } elseif (isset($_POST['reject_manager'])) {
@@ -73,6 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Rejected' WHERE id = ? AND status = 'Pending Manager Approval'");
         $stmt->bind_param("i", $request_id);
         $stmt->execute();
+        appLogActivity($conn, 'REJECT_EXPENSE_MANAGER', 'Manager rejected expense request #' . $request_id, 'expense_requests', $request_id);
         $message = 'Expense request rejected by manager';
     } elseif (isset($_POST['approve_director'])) {
         $request_id = intval($_POST['request_id']);
@@ -83,6 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Pending Accountant Processing', director_approved = 1, director_comment = ? WHERE id = ? AND status = 'Pending Director Approval'");
             $stmt->bind_param("si", $director_comment, $request_id);
             $stmt->execute();
+            appLogActivity($conn, 'APPROVE_EXPENSE_DIRECTOR', 'Director approved expense request #' . $request_id, 'expense_requests', $request_id);
             $message = 'Expense request approved by director';
         }
     } elseif (isset($_POST['reject_director'])) {
@@ -90,6 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Rejected' WHERE id = ? AND status = 'Pending Director Approval'");
         $stmt->bind_param("i", $request_id);
         $stmt->execute();
+        appLogActivity($conn, 'REJECT_EXPENSE_DIRECTOR', 'Director rejected expense request #' . $request_id, 'expense_requests', $request_id);
         $message = 'Expense request rejected by director';
     } elseif (isset($_POST['process_accountant'])) {
         $request_id = intval($_POST['request_id']);
@@ -189,6 +193,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     }
 
                     $conn->commit();
+                    appLogActivity($conn, 'PROCESS_EXPENSE_PAYMENT', $successText, 'expense_requests', $request_id);
                     $_SESSION['success_message'] = $successText;
                     header('Location: view_expense_requests.php');
                     exit();
@@ -206,9 +211,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $receipt_number = sanitize($_POST['receipt_number']);
         $actual_amount = floatval($_POST['actual_amount']);
         $notes = sanitize($_POST['notes']);
+        $requestCheckStmt = $conn->prepare("SELECT requested_by, status FROM expense_requests WHERE id = ? LIMIT 1");
+        $requestRow = null;
+        if ($requestCheckStmt) {
+            $requestCheckStmt->bind_param('i', $request_id);
+            $requestCheckStmt->execute();
+            $requestRow = $requestCheckStmt->get_result()->fetch_assoc() ?: null;
+        }
+
+        if (!$requestRow) {
+            $error = 'Expense request not found';
+        } elseif ((string) ($requestRow['status'] ?? '') !== 'Waiting for Receipt') {
+            $error = 'Receipt can only be uploaded when the request is waiting for receipt';
+        } elseif ((int) ($requestRow['requested_by'] ?? 0) !== (int) ($_SESSION['user_id'] ?? 0) && !hasPermission(['Super Admin'])) {
+            $error = 'You are not allowed to upload this receipt';
+        }
         
         $receipt_file = '';
-        if (isset($_FILES['receipt_file']) && $_FILES['receipt_file']['error'] == 0) {
+        if (!$error && isset($_FILES['receipt_file']) && $_FILES['receipt_file']['error'] == 0) {
             $upload_result = uploadFile($_FILES['receipt_file']);
             if (isset($upload_result['success'])) {
                 $receipt_file = $upload_result['success'];
@@ -225,6 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Completed', receipt_uploaded = 1 WHERE id = ?");
                 $stmt->bind_param("i", $request_id);
                 $stmt->execute();
+                appLogActivity($conn, 'UPLOAD_RECEIPT', 'Uploaded expense receipt for request #' . $request_id, 'receipts', $request_id);
                 $message = 'Receipt uploaded successfully';
             } else {
                 $error = 'Error uploading receipt';
@@ -304,6 +325,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
 
                 $conn->commit();
+                appLogActivity($conn, 'DELETE_EXPENSE', 'Deleted expense request #' . $request_id, 'expense_requests', $request_id);
                 $_SESSION['success_message'] = 'Expense request deleted successfully';
                 header('Location: view_expense_requests.php');
                 exit();
@@ -527,13 +549,13 @@ include '../includes/header.php';
                                             <?php if (hasPermission(['Super Admin'])): ?>
                                                 <button class="btn btn-sm btn-outline-danger" onclick="deleteExpenseRequest(<?php echo $row['id']; ?>)">Delete</button>
                                             <?php endif; ?>
-                                            <?php if ($_SESSION['role'] == 'Manager' && $row['status'] == 'Pending Manager Approval'): ?>
+                                            <?php if (hasPermission(['Manager']) && $row['status'] == 'Pending Manager Approval'): ?>
                                                 <button class="btn btn-sm btn-success" onclick="approveManager(<?php echo $row['id']; ?>)">Approve</button>
                                                 <button class="btn btn-sm btn-danger" onclick="rejectManager(<?php echo $row['id']; ?>)">Reject</button>
-                                            <?php elseif (($_SESSION['role'] == 'Director' || $_SESSION['role'] == 'Super Admin') && $row['status'] == 'Pending Director Approval'): ?>
+                                            <?php elseif (hasPermission(['Director']) && $row['status'] == 'Pending Director Approval'): ?>
                                                 <button class="btn btn-sm btn-success" onclick="approveDirector(<?php echo $row['id']; ?>)">Approve</button>
                                                 <button class="btn btn-sm btn-danger" onclick="rejectDirector(<?php echo $row['id']; ?>)">Reject</button>
-                                            <?php elseif ($_SESSION['role'] == 'Accountant' && $row['status'] == 'Pending Accountant Processing'): ?>
+                                            <?php elseif (hasPermission(['Accountant']) && $row['status'] == 'Pending Accountant Processing'): ?>
                                                 <button
                                                     class="btn btn-sm btn-primary"
                                                     data-request-id="<?php echo (int) $row['id']; ?>"
@@ -544,7 +566,7 @@ include '../includes/header.php';
                                                     data-preferred-channel="<?php echo htmlspecialchars($row['preferred_payout_channel'] ?: 'mobile', ENT_QUOTES); ?>"
                                                     onclick="processAccountant(this)"
                                                 >Process</button>
-                                            <?php elseif ($row['status'] == 'Waiting for Receipt' && $row['requested_by'] == $_SESSION['user_id']): ?>
+                                            <?php elseif ($row['status'] == 'Waiting for Receipt' && ($row['requested_by'] == $_SESSION['user_id'] || hasPermission(['Super Admin']))): ?>
                                                 <button class="btn btn-sm btn-info" onclick="uploadReceipt(<?php echo $row['id']; ?>)">Upload Receipt</button>
                                             <?php endif; ?>
                                         </td>

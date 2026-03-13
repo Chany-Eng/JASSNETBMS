@@ -590,7 +590,7 @@ if ($_SESSION['role'] == 'Sales' || $_SESSION['role'] == 'Technician') {
     $where_clause = "WHERE sr.requested_by = {$_SESSION['user_id']}";
 } elseif ($_SESSION['role'] == 'Manager') {
     $where_clause = "WHERE sr.status IN ('Pending Manager Approval', 'Pending Director Approval', 'Approved', 'Awaiting Accountant Approval', 'Pending Store Keeper Approval', 'Ready for Installation', 'Equipment Issued', 'Installation in Progress', 'Completed', 'Rejected')";
-} elseif ($_SESSION['role'] == 'Director' || $_SESSION['role'] == 'Super Admin') {
+} elseif ($_SESSION['role'] == 'Director') {
     $where_clause = "WHERE sr.status IN ('Pending Director Approval', 'Approved', 'Awaiting Accountant Approval', 'Pending Store Keeper Approval', 'Ready for Installation', 'Equipment Issued', 'Installation in Progress', 'Completed', 'Rejected')";
 } elseif ($_SESSION['role'] == 'Accountant') {
     $where_clause = "WHERE sr.status IN ('Awaiting Accountant Approval', 'Pending Store Keeper Approval', 'Ready for Installation', 'Equipment Issued', 'Installation in Progress', 'Completed')";
@@ -666,6 +666,7 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
                             </tr>
                         </thead>
                         <tbody>
+                            <?php if ($station_requests && $station_requests->num_rows > 0): ?>
                             <?php while ($request = $station_requests->fetch_assoc()): ?>
                             <?php $remainingBalance = max(0, (float) ($request['latest_total_actual_cost'] ?? 0) - (float) ($request['total_station_paid'] ?? 0)); ?>
                             <tr id="stationRow_<?php echo (int) $request['id']; ?>"
@@ -729,6 +730,13 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
                                 </td>
                             </tr>
                             <?php endwhile; ?>
+                            <?php else: ?>
+                            <tr>
+                                <td colspan="7" class="text-center py-4 text-muted">
+                                    No station requests found in the database for your access level.
+                                </td>
+                            </tr>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>

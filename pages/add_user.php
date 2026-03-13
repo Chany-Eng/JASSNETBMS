@@ -37,15 +37,17 @@ function generateEmployeeId($conn) {
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['add_user'])) {
-        $username = sanitize($_POST['username']);
+        $first_name = sanitize($_POST['first_name'] ?? '');
+        $middle_name = sanitize($_POST['middle_name'] ?? '');
+        $last_name = sanitize($_POST['last_name'] ?? '');
+        $full_name = composeFullNameFromParts($first_name, $middle_name, $last_name);
+        $username = generateUniqueUsername($conn, $first_name, $last_name);
         $plain_pass = $_POST['password'];
         $password = password_hash($plain_pass, PASSWORD_DEFAULT);
-        // roles come as array
         $roles = isset($_POST['role']) ? array_map('sanitize', $_POST['role']) : [];
         $role = implode(',', $roles);
-        $full_name = sanitize($_POST['full_name']);
-        // auto-generate employee id
         $employee_id = generateEmployeeId($conn);
+        $id_number = sanitize($_POST['id_number'] ?? '');
         $location = sanitize($_POST['location']);
         $gender = sanitize($_POST['gender'] ?? '');
         $phone = sanitize($_POST['phone']);
@@ -55,15 +57,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $payout_phone = sanitize($_POST['payout_phone'] ?? '');
         $preferred_payout_channel = sanitize($_POST['preferred_payout_channel'] ?? 'mobile');
 
-        $stmt = $conn->prepare("INSERT INTO users (username, password, role, full_name, employee_id, location, gender, phone, email, bank_name, bank_account_number, payout_phone, preferred_payout_channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssssssssssss", $username, $password, $role, $full_name, $employee_id, $location, $gender, $phone, $email, $bank_name, $bank_account_number, $payout_phone, $preferred_payout_channel);
-
-        if ($stmt->execute()) {
-            $_SESSION['success_message'] = 'User added successfully';
-            header("Location: users.php");
-            exit();
+        if ($first_name === '' || $last_name === '' || empty($roles)) {
+            $error = 'First name, last name, and at least one role are required';
         } else {
-            $error = 'Error adding user';
+            $stmt = $conn->prepare("INSERT INTO users (username, password, role, first_name, middle_name, last_name, full_name, employee_id, id_number, location, gender, phone, email, bank_name, bank_account_number, payout_phone, preferred_payout_channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("sssssssssssssssss", $username, $password, $role, $first_name, $middle_name, $last_name, $full_name, $employee_id, $id_number, $location, $gender, $phone, $email, $bank_name, $bank_account_number, $payout_phone, $preferred_payout_channel);
+
+            if ($stmt && $stmt->execute()) {
+                appLogActivity($conn, 'CREATE_USER', 'Created user account for ' . $full_name, 'users', (int) $stmt->insert_id);
+                $_SESSION['success_message'] = 'User added successfully';
+                header("Location: users.php");
+                exit();
+            } else {
+                $error = 'Error adding user';
+            }
         }
     }
 }
@@ -114,8 +121,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <div class="row">
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="username" class="form-label">Username *</label>
-                                <input type="text" class="form-control" id="username" name="username" required>
+                                <label for="username" class="form-label">Username</label>
+                                <input type="text" class="form-control" id="username" name="username_preview" readonly>
+                                <div class="form-text">Generated automatically as firstname.lastname</div>
                             </div>
                             <div class="mb-3">
                                 <label for="password" class="form-label">Password *</label>
@@ -138,13 +146,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="full_name" class="form-label">Full Name *</label>
-                                <input type="text" class="form-control" id="full_name" name="full_name" required>
+                                <label for="first_name" class="form-label">First Name *</label>
+                                <input type="text" class="form-control" id="first_name" name="first_name" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="middle_name" class="form-label">Middle Name</label>
+                                <input type="text" class="form-control" id="middle_name" name="middle_name">
+                            </div>
+                            <div class="mb-3">
+                                <label for="last_name" class="form-label">Last Name *</label>
+                                <input type="text" class="form-control" id="last_name" name="last_name" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="full_name_preview" class="form-label">Full Name</label>
+                                <input type="text" class="form-control" id="full_name_preview" readonly>
                             </div>
                             <div class="mb-3">
                                 <label for="employee_id" class="form-label">Employee ID *</label>
                                 <input type="text" class="form-control" id="employee_id" name="employee_id" readonly value="<?php echo generateEmployeeId($conn); ?>">
                                 <div class="form-text">Automatically generated</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="id_number" class="form-label">ID Number</label>
+                                <input type="text" class="form-control" id="id_number" name="id_number" placeholder="Zanzibar ID / NIDA / other ID number">
                             </div>
                             <div class="mb-3">
                                 <label for="location" class="form-label">Location</label>
@@ -207,6 +231,39 @@ document.addEventListener('DOMContentLoaded', function() {
         const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
         bsToast.show();
     }
+
+    const firstNameInput = document.getElementById('first_name');
+    const middleNameInput = document.getElementById('middle_name');
+    const lastNameInput = document.getElementById('last_name');
+    const usernameInput = document.getElementById('username');
+    const fullNamePreviewInput = document.getElementById('full_name_preview');
+
+    function slugPart(value) {
+        return value
+            .toLowerCase()
+            .trim()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, '.')
+            .replace(/^\.+|\.+$/g, '');
+    }
+
+    function updateGeneratedFields() {
+        const firstName = firstNameInput.value.trim();
+        const middleName = middleNameInput.value.trim();
+        const lastName = lastNameInput.value.trim();
+        const username = [slugPart(firstName), slugPart(lastName)].filter(Boolean).join('.');
+        const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ');
+
+        usernameInput.value = username;
+        fullNamePreviewInput.value = fullName;
+    }
+
+    [firstNameInput, middleNameInput, lastNameInput].forEach(function(input) {
+        input.addEventListener('input', updateGeneratedFields);
+    });
+
+    updateGeneratedFields();
 });
 </script>
 

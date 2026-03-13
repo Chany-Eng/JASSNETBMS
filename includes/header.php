@@ -9,6 +9,19 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <?php
     $base_path = (basename(dirname($_SERVER['PHP_SELF'])) == 'pages') ? '../' : '';
+    if (isset($_GET['mark_notification']) && function_exists('markNotificationAsRead')) {
+        markNotificationAsRead($conn, (string) $_GET['mark_notification']);
+    }
+    if (function_exists('isLoggedIn') && isLoggedIn() && function_exists('appLogActivity')) {
+        $currentPage = basename($_SERVER['PHP_SELF']);
+        $lastLoggedPage = $_SESSION['last_logged_page'] ?? '';
+        $lastLoggedAt = (int) ($_SESSION['last_logged_page_at'] ?? 0);
+        if ($currentPage !== $lastLoggedPage || (time() - $lastLoggedAt) > 120) {
+            appLogActivity($conn, 'PAGE_VIEW', 'Opened page ' . $currentPage, 'page_views');
+            $_SESSION['last_logged_page'] = $currentPage;
+            $_SESSION['last_logged_page_at'] = time();
+        }
+    }
     ?>
     <link href="<?php echo $base_path; ?>assets/css/style.css" rel="stylesheet">
     <style>
@@ -279,6 +292,23 @@
             color: #6c757d;
             background: #f8f9fa;
         }
+        .notification-item-unread {
+            background: #eef6ff;
+        }
+        .notification-item-read {
+            background: #ffffff;
+            opacity: 0.82;
+        }
+        .app-target-highlight {
+            animation: appPulseHighlight 2.2s ease;
+            box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.25) inset;
+            background-color: rgba(255, 244, 179, 0.92) !important;
+        }
+        @keyframes appPulseHighlight {
+            0% { box-shadow: 0 0 0 0 rgba(31, 111, 235, 0.55) inset; }
+            35% { box-shadow: 0 0 0 4px rgba(31, 111, 235, 0.35) inset; }
+            100% { box-shadow: 0 0 0 0 rgba(31, 111, 235, 0) inset; }
+        }
         @media (max-width: 768px) {
             .sidebar {
                 transform: translateX(-100%);
@@ -486,7 +516,7 @@
             <?php endif; ?>
             <?php if (hasPermission(['Super Admin'])): ?>
             <li class="dropdown">
-                <a href="#" class="dropdown-toggle <?php echo in_array(basename($_SERVER['PHP_SELF']), ['users.php', 'add_user.php', 'supported_banks.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#usersSubmenu">
+                <a href="#" class="dropdown-toggle <?php echo in_array(basename($_SERVER['PHP_SELF']), ['users.php', 'add_user.php', 'supported_banks.php', 'admin_history.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#usersSubmenu">
                     <i class="fas fa-users"></i>
                     <span>Users</span>
                     <i class="fas fa-chevron-down float-end"></i>
@@ -510,10 +540,16 @@
                             <span>Supported Banks</span>
                         </a>
                     </li>
+                    <li>
+                        <a href="<?php echo $base_path; ?>pages/admin_history.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'admin_history.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-history"></i>
+                            <span>Admin History</span>
+                        </a>
+                    </li>
                 </ul>
             </li>
             <?php endif; ?>
-            <?php if (hasPermission(['Director', 'Super Admin'])): ?>
+            <?php if (hasPermission(['Director', 'Super Admin', 'Accountant'])): ?>
             <li>
                 <a href="<?php echo $base_path; ?>pages/reports.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'reports.php' ? 'active' : ''; ?>">
                     <i class="fas fa-chart-bar"></i>
@@ -521,6 +557,12 @@
                 </a>
             </li>
             <?php endif; ?>
+            <li>
+                <a href="<?php echo $base_path; ?>pages/payroll.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'payroll.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-money-check-dollar"></i>
+                    <span>Payroll</span>
+                </a>
+            </li>
         </ul>
     </nav>
 
@@ -549,7 +591,39 @@
                         $currentUser = getCurrentUser();
                         $profilePhoto = $currentUser['profile_photo'] ?? '';
                     }
+                    $actionNotifications = function_exists('getUserActionNotifications') ? getUserActionNotifications($conn) : [];
+                    $unreadNotifications = array_values(array_filter($actionNotifications, static function ($item) {
+                        return empty($item['is_read']);
+                    }));
+                    $notificationCount = count($unreadNotifications);
                     ?>
+                    <div class="dropdown me-3">
+                        <button class="btn btn-outline-secondary position-relative" type="button" id="notificationDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-bell"></i>
+                            <?php if ($notificationCount > 0): ?>
+                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"><?php echo $notificationCount > 9 ? '9+' : $notificationCount; ?></span>
+                            <?php endif; ?>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="notificationDropdown" style="min-width: 340px; max-height: 420px; overflow-y: auto;">
+                            <li class="dropdown-header d-flex justify-content-between align-items-center">
+                                <span>Requests Requiring Action</span>
+                                <span class="badge bg-primary"><?php echo $notificationCount; ?> unread</span>
+                            </li>
+                            <?php if (!empty($actionNotifications)): ?>
+                                <?php foreach ($actionNotifications as $notification): ?>
+                                    <li>
+                                        <a class="dropdown-item py-2 <?php echo !empty($notification['is_read']) ? 'notification-item-read' : 'notification-item-unread'; ?>" href="<?php echo $base_path . ltrim((string) ($notification['target'] ?? ''), '/'); ?>">
+                                            <div class="fw-semibold"><?php echo htmlspecialchars((string) ($notification['title'] ?? 'Request notification')); ?></div>
+                                            <div class="small text-muted"><?php echo htmlspecialchars((string) ($notification['description'] ?? '')); ?></div>
+                                            <div class="small <?php echo !empty($notification['is_read']) ? 'text-muted' : 'text-primary'; ?>"><?php echo !empty($notification['is_read']) ? 'Read' : 'Unread'; ?></div>
+                                        </a>
+                                    </li>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <li><span class="dropdown-item-text text-muted">No pending request notifications.</span></li>
+                            <?php endif; ?>
+                        </ul>
+                    </div>
                     <div class="me-3">
                         <?php if (!empty($profilePhoto)): ?>
                             <img src="<?php echo $base_path; ?>uploads/<?php echo htmlspecialchars($profilePhoto); ?>" class="user-avatar" alt="User Photo" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">

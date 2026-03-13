@@ -156,6 +156,17 @@
                     loadingOverlay.classList.remove('show');
                 });
             }
+
+            if (window.location.hash) {
+                const targetElement = document.querySelector(window.location.hash);
+                if (targetElement) {
+                    targetElement.classList.add('app-target-highlight');
+                    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    window.setTimeout(function() {
+                        targetElement.classList.remove('app-target-highlight');
+                    }, 2600);
+                }
+            }
         });
     </script>
 </body>

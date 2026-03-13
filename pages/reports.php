@@ -6,7 +6,7 @@ if (!isLoggedIn()) {
     exit();
 }
 
-requirePermission(['Director', 'Super Admin']);
+requirePermission(['Director', 'Super Admin', 'Accountant']);
 ensureInventorySoftDeleteSchema($conn);
 
 $message = '';

@@ -37,8 +37,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $roles = isset($_POST['role']) ? array_map('sanitize', $_POST['role']) : [];
         $role = implode(',', $roles);
 
-        $full_name = sanitize($_POST['full_name'] ?? '');
+        $first_name = sanitize($_POST['first_name'] ?? '');
+        $middle_name = sanitize($_POST['middle_name'] ?? '');
+        $last_name = sanitize($_POST['last_name'] ?? '');
+        $full_name = composeFullNameFromParts($first_name, $middle_name, $last_name);
+        $username = generateUniqueUsername($conn, $first_name, $last_name, $user_id);
         $employee_id = sanitize($_POST['employee_id'] ?? '');
+        $id_number = sanitize($_POST['id_number'] ?? '');
         $location = sanitize($_POST['location'] ?? '');
         $gender = sanitize($_POST['gender'] ?? '');
         $phone = sanitize($_POST['phone'] ?? '');
@@ -49,10 +54,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $preferred_payout_channel = sanitize($_POST['preferred_payout_channel'] ?? 'mobile');
         $is_active = isset($_POST['is_active']) ? 1 : 0;
 
-        $stmt = $conn->prepare('UPDATE users SET role = ?, full_name = ?, employee_id = ?, location = ?, gender = ?, phone = ?, email = ?, bank_name = ?, bank_account_number = ?, payout_phone = ?, preferred_payout_channel = ?, is_active = ? WHERE id = ?');
-        if ($stmt) {
-            $stmt->bind_param('sssssssssssii', $role, $full_name, $employee_id, $location, $gender, $phone, $email, $bank_name, $bank_account_number, $payout_phone, $preferred_payout_channel, $is_active, $user_id);
+        if ($first_name === '' || $last_name === '' || empty($roles)) {
+            $error = 'First name, last name, and at least one role are required';
+        } else {
+            $stmt = $conn->prepare('UPDATE users SET username = ?, role = ?, first_name = ?, middle_name = ?, last_name = ?, full_name = ?, employee_id = ?, id_number = ?, location = ?, gender = ?, phone = ?, email = ?, bank_name = ?, bank_account_number = ?, payout_phone = ?, preferred_payout_channel = ?, is_active = ? WHERE id = ?');
+        }
+        if (!$error && $stmt) {
+            $stmt->bind_param('ssssssssssssssssii', $username, $role, $first_name, $middle_name, $last_name, $full_name, $employee_id, $id_number, $location, $gender, $phone, $email, $bank_name, $bank_account_number, $payout_phone, $preferred_payout_channel, $is_active, $user_id);
             if ($stmt->execute()) {
+                appLogActivity($conn, 'UPDATE_USER', 'Updated user account for ' . $full_name, 'users', $user_id);
                 $_SESSION['success_message'] = 'User updated successfully';
                 header('Location: users.php');
                 exit();
@@ -87,6 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($stmt) {
                         $stmt->bind_param('si', $new_password, $user_id);
                         if ($stmt->execute()) {
+                                appLogActivity($conn, 'RESET_PASSWORD', 'Reset password and sent SMS to user #' . $user_id, 'users', $user_id);
                             $_SESSION['success_message'] = 'Password reset and SMS sent successfully';
                             header('Location: users.php');
                             exit();
@@ -112,6 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->bind_param('i', $user_id);
                 if ($stmt->execute()) {
                     if ($stmt->affected_rows > 0) {
+                        appLogActivity($conn, 'DELETE_USER', 'Deleted user account #' . $user_id, 'users', $user_id);
                         $_SESSION['success_message'] = 'User deleted successfully';
                         header('Location: users.php');
                         exit();
@@ -179,6 +191,7 @@ if (!$users) {
                         <thead>
                             <tr>
                                 <th>Name</th>
+                                <th>ID No.</th>
                                 <th>Username</th>
                                 <th>Employee ID</th>
                                 <th>Location</th>
@@ -193,10 +206,19 @@ if (!$users) {
                         <tbody>
                             <?php if ($users && $users->num_rows > 0): ?>
                                 <?php while ($user = $users->fetch_assoc()): ?>
+                                <?php $nameParts = splitFullNameParts((string) ($user['full_name'] ?? '')); ?>
+                                <?php $firstName = trim((string) (($user['first_name'] ?? '') !== '' ? $user['first_name'] : ($nameParts['first_name'] ?? ''))); ?>
+                                <?php $middleName = trim((string) (($user['middle_name'] ?? '') !== '' ? $user['middle_name'] : ($nameParts['middle_name'] ?? ''))); ?>
+                                <?php $lastName = trim((string) (($user['last_name'] ?? '') !== '' ? $user['last_name'] : ($nameParts['last_name'] ?? ''))); ?>
+                                <?php $displayFullName = composeFullNameFromParts($firstName, $middleName, $lastName); ?>
                                 <tr id="userRow_<?php echo (int) $user['id']; ?>"
                                     data-username="<?php echo htmlspecialchars($user['username'] ?? ''); ?>"
-                                    data-full_name="<?php echo htmlspecialchars($user['full_name'] ?? ''); ?>"
+                                    data-first_name="<?php echo htmlspecialchars($firstName); ?>"
+                                    data-middle_name="<?php echo htmlspecialchars($middleName); ?>"
+                                    data-last_name="<?php echo htmlspecialchars($lastName); ?>"
+                                    data-full_name="<?php echo htmlspecialchars($displayFullName); ?>"
                                     data-employee_id="<?php echo htmlspecialchars($user['employee_id'] ?? ''); ?>"
+                                    data-id_number="<?php echo htmlspecialchars($user['id_number'] ?? ''); ?>"
                                     data-role="<?php echo htmlspecialchars($user['role'] ?? ''); ?>"
                                     data-location="<?php echo htmlspecialchars($user['location'] ?? ''); ?>"
                                     data-gender="<?php echo htmlspecialchars($user['gender'] ?? ''); ?>"
@@ -207,7 +229,8 @@ if (!$users) {
                                     data-payout_phone="<?php echo htmlspecialchars($user['payout_phone'] ?? ''); ?>"
                                     data-preferred_payout_channel="<?php echo htmlspecialchars($user['preferred_payout_channel'] ?? 'mobile'); ?>"
                                     data-is_active="<?php echo (int) ($user['is_active'] ?? 0); ?>">
-                                    <td><?php echo htmlspecialchars($user['full_name'] ?? ''); ?></td>
+                                    <td><?php echo htmlspecialchars($displayFullName); ?></td>
+                                    <td><?php echo htmlspecialchars(($user['id_number'] ?? '') ?: 'N/A'); ?></td>
                                     <td><?php echo htmlspecialchars($user['username'] ?? ''); ?></td>
                                     <td><?php echo htmlspecialchars($user['employee_id'] ?? ''); ?></td>
                                     <td><?php echo htmlspecialchars(($user['location'] ?? '') ?: 'N/A'); ?></td>
@@ -232,7 +255,7 @@ if (!$users) {
                                 <?php endwhile; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="9" class="text-center text-muted">No users found.</td>
+                                    <td colspan="10" class="text-center text-muted">No users found.</td>
                                 </tr>
                             <?php endif; ?>
                         </tbody>
@@ -256,12 +279,28 @@ if (!$users) {
                     <div class="row">
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="edit_full_name" class="form-label">Full Name *</label>
-                                <input type="text" class="form-control" id="edit_full_name" name="full_name" required>
+                                <label for="edit_first_name" class="form-label">First Name *</label>
+                                <input type="text" class="form-control" id="edit_first_name" name="first_name" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="edit_middle_name" class="form-label">Middle Name</label>
+                                <input type="text" class="form-control" id="edit_middle_name" name="middle_name">
+                            </div>
+                            <div class="mb-3">
+                                <label for="edit_last_name" class="form-label">Last Name *</label>
+                                <input type="text" class="form-control" id="edit_last_name" name="last_name" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="edit_username" class="form-label">Username</label>
+                                <input type="text" class="form-control" id="edit_username" readonly>
                             </div>
                             <div class="mb-3">
                                 <label for="edit_employee_id" class="form-label">Employee ID *</label>
                                 <input type="text" class="form-control" id="edit_employee_id" name="employee_id" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="edit_id_number" class="form-label">ID Number</label>
+                                <input type="text" class="form-control" id="edit_id_number" name="id_number">
                             </div>
                             <div class="mb-3">
                                 <label for="edit_location" class="form-label">Location</label>
@@ -347,9 +386,13 @@ if (!$users) {
             </div>
             <div class="modal-body">
                 <div class="row g-3">
+                    <div class="col-md-6"><strong>First Name:</strong> <span id="view_first_name">-</span></div>
+                    <div class="col-md-6"><strong>Middle Name:</strong> <span id="view_middle_name">-</span></div>
+                    <div class="col-md-6"><strong>Last Name:</strong> <span id="view_last_name">-</span></div>
                     <div class="col-md-6"><strong>Full Name:</strong> <span id="view_full_name">-</span></div>
                     <div class="col-md-6"><strong>Username:</strong> <span id="view_username">-</span></div>
                     <div class="col-md-6"><strong>Employee ID:</strong> <span id="view_employee_id">-</span></div>
+                    <div class="col-md-6"><strong>ID Number:</strong> <span id="view_id_number">-</span></div>
                     <div class="col-md-6"><strong>Gender:</strong> <span id="view_gender">-</span></div>
                     <div class="col-md-6"><strong>Location:</strong> <span id="view_location">-</span></div>
                     <div class="col-md-6"><strong>Phone:</strong> <span id="view_phone">-</span></div>
@@ -409,9 +452,13 @@ function viewUser(id) {
     const row = document.getElementById('userRow_' + id);
     if (!row) return;
 
+    document.getElementById('view_first_name').textContent = row.dataset.first_name || 'N/A';
+    document.getElementById('view_middle_name').textContent = row.dataset.middle_name || 'N/A';
+    document.getElementById('view_last_name').textContent = row.dataset.last_name || 'N/A';
     document.getElementById('view_full_name').textContent = row.dataset.full_name || 'N/A';
     document.getElementById('view_username').textContent = row.dataset.username || 'N/A';
     document.getElementById('view_employee_id').textContent = row.dataset.employee_id || 'N/A';
+    document.getElementById('view_id_number').textContent = row.dataset.id_number || 'N/A';
     document.getElementById('view_gender').textContent = row.dataset.gender || 'N/A';
     document.getElementById('view_location').textContent = row.dataset.location || 'N/A';
     document.getElementById('view_phone').textContent = row.dataset.phone || 'N/A';
@@ -431,8 +478,12 @@ function editUser(id) {
     if (!row) return;
 
     document.getElementById('editUserId').value = id;
-    document.getElementById('edit_full_name').value = row.dataset.full_name || '';
+    document.getElementById('edit_first_name').value = row.dataset.first_name || '';
+    document.getElementById('edit_middle_name').value = row.dataset.middle_name || '';
+    document.getElementById('edit_last_name').value = row.dataset.last_name || '';
+    document.getElementById('edit_username').value = row.dataset.username || '';
     document.getElementById('edit_employee_id').value = row.dataset.employee_id || '';
+    document.getElementById('edit_id_number').value = row.dataset.id_number || '';
     document.getElementById('edit_location').value = row.dataset.location || '';
     document.getElementById('edit_gender').value = row.dataset.gender || '';
     document.getElementById('edit_phone').value = row.dataset.phone || '';
@@ -475,6 +526,36 @@ document.addEventListener('DOMContentLoaded', function() {
         const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
         bsToast.show();
     }
+
+    function bindUsernamePreview(firstId, lastId, usernameId) {
+        const firstInput = document.getElementById(firstId);
+        const lastInput = document.getElementById(lastId);
+        const usernameInput = document.getElementById(usernameId);
+        if (!firstInput || !lastInput || !usernameInput) {
+            return;
+        }
+
+        function slugPart(value) {
+            return value
+                .toLowerCase()
+                .trim()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z0-9]+/g, '.')
+                .replace(/^\.+|\.+$/g, '');
+        }
+
+        function updatePreview() {
+            const username = [slugPart(firstInput.value), slugPart(lastInput.value)].filter(Boolean).join('.');
+            usernameInput.value = username;
+        }
+
+        firstInput.addEventListener('input', updatePreview);
+        lastInput.addEventListener('input', updatePreview);
+        updatePreview();
+    }
+
+    bindUsernamePreview('edit_first_name', 'edit_last_name', 'edit_username');
 });
 </script>
 
