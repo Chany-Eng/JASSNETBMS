@@ -1,5 +1,7 @@
 <?php
 require_once '../includes/functions.php';
+require_once '../includes/snippe_payouts.php';
+require_once '../includes/expense_workflow.php';
 
 if (!isLoggedIn()) {
     header("Location: ../index.php");
@@ -10,8 +12,14 @@ requirePermission(['Sales', 'Technician', 'Manager', 'Director', 'Accountant', '
 
 $error = '';
 $expense_request = null;
-$expense_payment = null;
+$expense_payments = [];
 $receipt = null;
+$payouts = [];
+$latestPayout = null;
+$payoutSummary = null;
+
+snippeEnsurePayoutTables($conn);
+expenseEnsureWorkflowSchema($conn);
 
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     $error = 'Invalid expense request ID';
@@ -26,19 +34,29 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     
     if ($result->num_rows > 0) {
         $expense_request = $result->fetch_assoc();
+        $payoutSummary = expenseSyncPayoutStatus($conn, $request_id);
     } else {
         $error = 'Expense request not found';
     }
     
     // Fetch related payment if exists
     if ($expense_request) {
-        $stmt = $conn->prepare("SELECT ep.*, u.full_name as accountant_name FROM expense_payments ep LEFT JOIN users u ON ep.accountant_id = u.id WHERE ep.expense_request_id = ?");
+        $stmt = $conn->prepare("SELECT ep.*, u.full_name as accountant_name FROM expense_payments ep LEFT JOIN users u ON ep.accountant_id = u.id WHERE ep.expense_request_id = ? ORDER BY ep.payment_date DESC, ep.id DESC");
         $stmt->bind_param("i", $request_id);
         $stmt->execute();
         $result = $stmt->get_result();
-        if ($result->num_rows > 0) {
-            $expense_payment = $result->fetch_assoc();
+        while ($result && ($paymentRow = $result->fetch_assoc())) {
+            $expense_payments[] = $paymentRow;
         }
+
+        $stmt = $conn->prepare("SELECT * FROM snippe_payouts WHERE expense_request_id = ? ORDER BY id DESC");
+        $stmt->bind_param("i", $request_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($result && ($payoutRow = $result->fetch_assoc())) {
+            $payouts[] = $payoutRow;
+        }
+        $latestPayout = $payouts[0] ?? null;
         
         // Fetch related receipt if exists
         $stmt = $conn->prepare("SELECT * FROM receipts WHERE expense_request_id = ? LIMIT 1");
@@ -54,13 +72,12 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 include '../includes/header.php';
 ?>
 
-<div class="main-content">
-    <div class="container-fluid py-4">
+<div class="container-fluid py-4 detail-page detail-page-stack">
         <div class="row mb-4">
             <div class="col-12">
                 <div class="d-flex justify-content-between align-items-center">
                     <h2 class="mb-0">Expense Request Details</h2>
-                    <a href="expenses.php" class="btn btn-secondary">
+                    <a href="view_expense_requests.php" class="btn btn-secondary">
                         <i class="fas fa-arrow-left"></i> Back to Expenses
                     </a>
                 </div>
@@ -74,10 +91,16 @@ include '../includes/header.php';
         <?php endif; ?>
 
         <?php if ($expense_request): ?>
+            <?php if ($expense_request['status'] === 'Rejected'): ?>
+                <div class="alert alert-danger border-0 shadow-sm">
+                    <strong>Expense request rejected.</strong> This request will remain stopped until a new valid request is submitted or the rejected request is edited and resubmitted where allowed.
+                </div>
+            <?php endif; ?>
+
             <!-- Request Information Card -->
             <div class="row mb-4">
                 <div class="col-12">
-                    <div class="card">
+                    <div class="card page-shell-card">
                         <div class="card-header bg-primary text-white">
                             <h5 class="mb-0">
                                 <i class="fas fa-receipt"></i> Request Information
@@ -107,6 +130,8 @@ include '../includes/header.php';
                                             Tshs. <?php echo number_format($expense_request['amount_requested'], 2); ?>
                                         </span>
                                     </p>
+                                    <p><strong>Total Paid:</strong> <span class="text-success">Tshs. <?php echo number_format((float) ($payoutSummary['total_paid'] ?? 0), 2); ?></span></p>
+                                    <p><strong>Remaining Balance:</strong> <span class="<?php echo ((float) ($payoutSummary['remaining_balance'] ?? 0)) > 0 ? 'text-warning' : 'text-success'; ?>">Tshs. <?php echo number_format((float) ($payoutSummary['remaining_balance'] ?? 0), 2); ?></span></p>
                                 </div>
                             </div>
 
@@ -134,6 +159,13 @@ include '../includes/header.php';
                                     </div>
                                 </div>
                             <?php endif; ?>
+
+                            <?php if ($latestPayout && !empty($payoutSummary['latest_payout_status']) && in_array($payoutSummary['latest_payout_status'], ['failed', 'cancelled', 'canceled'], true)): ?>
+                                <div class="alert alert-danger mb-0">
+                                    <strong>Latest payout failed.</strong>
+                                    <?php echo htmlspecialchars($payoutSummary['latest_failure_reason'] ?: 'No failure reason returned by Snippe.'); ?>
+                                </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -142,7 +174,7 @@ include '../includes/header.php';
             <!-- Approval Status Card -->
             <div class="row mb-4">
                 <div class="col-12">
-                    <div class="card">
+                    <div class="card page-shell-card">
                         <div class="card-header bg-info text-white">
                             <h5 class="mb-0">
                                 <i class="fas fa-check-circle"></i> Approval Status
@@ -159,6 +191,7 @@ include '../includes/header.php';
                                         <p class="text-muted">
                                             <?php echo $expense_request['manager_approved'] ? '<span class="text-success">✓ Approved</span>' : '<span class="text-warning">Pending</span>'; ?>
                                         </p>
+                                        <div class="small text-muted"><?php echo !empty($expense_request['manager_comment']) ? nl2br(htmlspecialchars($expense_request['manager_comment'])) : 'No manager comment yet.'; ?></div>
                                     </div>
                                 </div>
                                 <div class="col-md-4">
@@ -170,6 +203,7 @@ include '../includes/header.php';
                                         <p class="text-muted">
                                             <?php echo $expense_request['director_approved'] ? '<span class="text-success">✓ Approved</span>' : '<span class="text-warning">Pending</span>'; ?>
                                         </p>
+                                        <div class="small text-muted"><?php echo !empty($expense_request['director_comment']) ? nl2br(htmlspecialchars($expense_request['director_comment'])) : 'No director comment yet.'; ?></div>
                                     </div>
                                 </div>
                                 <div class="col-md-4">
@@ -179,8 +213,9 @@ include '../includes/header.php';
                                         </div>
                                         <p class="mt-2"><strong>Accountant Processing</strong></p>
                                         <p class="text-muted">
-                                            <?php echo $expense_request['accountant_processed'] ? '<span class="text-success">✓ Processed</span>' : '<span class="text-warning">Pending</span>'; ?>
+                                            <?php echo $expense_request['accountant_processed'] ? '<span class="text-success">✓ Fully Paid</span>' : '<span class="text-warning">Awaiting Balance Clearance</span>'; ?>
                                         </p>
+                                        <div class="small text-muted"><?php echo !empty($expense_request['accountant_comment']) ? nl2br(htmlspecialchars($expense_request['accountant_comment'])) : 'No accountant comment yet.'; ?></div>
                                     </div>
                                 </div>
                             </div>
@@ -189,30 +224,106 @@ include '../includes/header.php';
                 </div>
             </div>
 
-            <!-- Payment Information Card -->
-            <?php if ($expense_payment): ?>
+            <!-- Payment Summary Card -->
+            <?php if ($payoutSummary): ?>
                 <div class="row mb-4">
-                    <div class="col-12">
-                        <div class="card">
+                    <div class="col-12 mb-4">
+                        <div class="card page-shell-card">
                             <div class="card-header bg-success text-white">
                                 <h5 class="mb-0">
-                                    <i class="fas fa-money-bill"></i> Payment Information
+                                    <i class="fas fa-money-bill"></i> Payment Summary
                                 </h5>
                             </div>
                             <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <p><strong>Amount Paid:</strong> 
-                                            <span class="text-success font-weight-bold">
-                                                Tshs. <?php echo number_format($expense_payment['amount_paid'], 2); ?>
-                                            </span>
-                                        </p>
-                                        <p><strong>Payment Method:</strong> <?php echo htmlspecialchars($expense_payment['payment_method']); ?></p>
+                                <p><strong>Requested:</strong> Tshs. <?php echo number_format((float) ($payoutSummary['amount_requested'] ?? 0), 2); ?></p>
+                                <p><strong>Paid:</strong> <span class="text-success">Tshs. <?php echo number_format((float) ($payoutSummary['total_paid'] ?? 0), 2); ?></span></p>
+                                <p><strong>In Flight:</strong> Tshs. <?php echo number_format((float) ($payoutSummary['total_in_flight'] ?? 0), 2); ?></p>
+                                <p><strong>Remaining:</strong> <span class="<?php echo ((float) ($payoutSummary['remaining_balance'] ?? 0)) > 0 ? 'text-warning' : 'text-success'; ?>">Tshs. <?php echo number_format((float) ($payoutSummary['remaining_balance'] ?? 0), 2); ?></span></p>
+                                <p><strong>Next Workflow Status:</strong> <?php echo htmlspecialchars((string) ($payoutSummary['next_status'] ?? 'Pending Accountant Processing')); ?></p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="card page-shell-card h-100">
+                            <div class="card-header bg-light">
+                                <h5 class="mb-0"><i class="fas fa-history"></i> Payment History</h5>
+                            </div>
+                            <div class="card-body p-0">
+                                <?php if ($expense_payments): ?>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-striped mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>Date</th>
+                                                    <th>Amount</th>
+                                                    <th>Method</th>
+                                                    <th>Processed By</th>
+                                                    <th>Reference</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach ($expense_payments as $expense_payment): ?>
+                                                    <tr>
+                                                        <td><?php echo htmlspecialchars(date('M d, Y', strtotime($expense_payment['payment_date']))); ?></td>
+                                                        <td>Tshs. <?php echo number_format((float) $expense_payment['amount_paid'], 2); ?></td>
+                                                        <td><?php echo htmlspecialchars($expense_payment['payment_method']); ?></td>
+                                                        <td><?php echo htmlspecialchars($expense_payment['accountant_name'] ?: 'N/A'); ?></td>
+                                                        <td><?php echo htmlspecialchars($expense_payment['payout_reference'] ?: 'Manual'); ?></td>
+                                                    </tr>
+                                                    <?php if (!empty($expense_payment['payment_notes'])): ?>
+                                                        <tr>
+                                                            <td colspan="5" class="small text-muted">Notes: <?php echo nl2br(htmlspecialchars($expense_payment['payment_notes'])); ?></td>
+                                                        </tr>
+                                                    <?php endif; ?>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
                                     </div>
-                                    <div class="col-md-6">
-                                        <p><strong>Payment Date:</strong> <?php echo date('M d, Y', strtotime($expense_payment['payment_date'])); ?></p>
-                                        <p><strong>Processed By:</strong> <?php echo htmlspecialchars($expense_payment['accountant_name'] ?: 'N/A'); ?></p>
-                                    </div>
+                                <?php else: ?>
+                                    <div class="p-3 text-muted">No payment has been recorded yet.</div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($payouts): ?>
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card page-shell-card">
+                            <div class="card-header bg-info text-white">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-paper-plane"></i> Snippe Payout Attempts
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-striped table-sm mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Created</th>
+                                                <th>Channel</th>
+                                                <th>Amount</th>
+                                                <th>Status</th>
+                                                <th>Reference</th>
+                                                <th>Failure Reason</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($payouts as $payout): ?>
+                                                <?php $payoutStatus = strtolower((string) ($payout['status'] ?? 'pending')); ?>
+                                                <tr>
+                                                    <td><?php echo htmlspecialchars(date('M d, Y H:i', strtotime((string) ($payout['created_at'] ?? 'now')))); ?></td>
+                                                    <td><?php echo htmlspecialchars(stripos((string) $payout['payout_channel'], 'bank') !== false ? 'Bank Transfer' : 'Mobile Money'); ?></td>
+                                                    <td>Tshs. <?php echo number_format((float) ($payout['amount_value'] ?? 0), 2); ?></td>
+                                                    <td><span class="badge bg-<?php echo in_array($payoutStatus, ['completed', 'success'], true) ? 'success' : (in_array($payoutStatus, ['failed', 'cancelled', 'canceled'], true) ? 'danger' : 'warning'); ?>"><?php echo htmlspecialchars(strtoupper($payoutStatus)); ?></span></td>
+                                                    <td><?php echo htmlspecialchars($payout['reference'] ?: 'N/A'); ?></td>
+                                                    <td><?php echo htmlspecialchars($payout['failure_reason'] ?: 'N/A'); ?></td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         </div>
@@ -224,7 +335,7 @@ include '../includes/header.php';
             <?php if ($receipt): ?>
                 <div class="row mb-4">
                     <div class="col-12">
-                        <div class="card">
+                        <div class="card page-shell-card">
                             <div class="card-header bg-primary text-white">
                                 <h5 class="mb-0">
                                     <i class="fas fa-file-alt"></i> Receipt Information
@@ -266,10 +377,23 @@ include '../includes/header.php';
             <?php endif; ?>
 
         <?php endif; ?>
-    </div>
 </div>
 
 <style>
+.detail-page-stack {
+    max-width: 1180px;
+}
+
+.detail-page .card {
+    border: 1px solid #dbe4f0;
+    border-radius: 18px;
+    overflow: hidden;
+}
+
+.detail-page .card-header {
+    padding: 1rem 1.25rem;
+}
+
 .approval-badge {
     width: 80px;
     height: 80px;

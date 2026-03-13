@@ -11,7 +11,7 @@ if (defined('APP_ROOT')) {
 }
 
 // Environment
-define('APP_ENV', getenv('APP_ENV') ?? 'development');
+define('APP_ENV', getenv('APP_ENV') ?: 'development');
 define('APP_DEBUG', APP_ENV === 'development');
 
 // Application Name and Version
@@ -19,10 +19,10 @@ define('APP_NAME', 'JASSNET Business Management System');
 define('APP_VERSION', '2.0.0');
 
 // Database Configuration
-define('DB_HOST', getenv('DB_HOST') ?? 'localhost');
-define('DB_USER', getenv('DB_USER') ?? 'root');
-define('DB_PASS', getenv('DB_PASS') ?? '');
-define('DB_NAME', getenv('DB_NAME') ?? 'jassnet_bms');
+define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
+define('DB_USER', getenv('DB_USER') ?: 'root');
+define('DB_PASS', getenv('DB_PASS') !== false ? getenv('DB_PASS') : '');
+define('DB_NAME', getenv('DB_NAME') ?: 'jassnet_bms');
 define('DB_CHARSET', 'utf8mb4');
 
 // Application Settings
@@ -65,6 +65,16 @@ define('SMS_API_URL', getenv('SMS_API_URL') ?? '');
 define('SMS_API_KEY', getenv('SMS_API_KEY') ?? '');
 define('SMS_PROVIDER', getenv('SMS_PROVIDER') ?? 'custom');
 
+// Snippe Payment Gateway
+define('SNIPPE_API_BASE_URL', getenv('SNIPPE_API_BASE_URL') ?: 'https://api.snippe.sh');
+define('SNIPPE_API_KEY', getenv('SNIPPE_API_KEY') ?: 'snp_017365ea48893db7b92c8f249ca36d6d49515afd63390f39817e00140ae47329');
+define('SNIPPE_API_TIMEOUT', 20);
+define('SNIPPE_AUTO_SYNC_ENABLED', getenv('SNIPPE_AUTO_SYNC_ENABLED') !== false ? filter_var(getenv('SNIPPE_AUTO_SYNC_ENABLED'), FILTER_VALIDATE_BOOLEAN) : true);
+define('SNIPPE_AUTO_SYNC_INTERVAL_MINUTES', (int) (getenv('SNIPPE_AUTO_SYNC_INTERVAL_MINUTES') ?: 15));
+define('SNIPPE_AUTO_SYNC_LIMIT', (int) (getenv('SNIPPE_AUTO_SYNC_LIMIT') ?: 100));
+define('SNIPPE_AUTO_SYNC_MAX_PAGES', (int) (getenv('SNIPPE_AUTO_SYNC_MAX_PAGES') ?: 3));
+define('SNIPPE_WEBHOOK_SECRET', getenv('SNIPPE_WEBHOOK_SECRET') ?: 'whsec_bf0076a5cb2a5f4e513ba6d2ed8c1347b258c8cb93ab0e765e45709364394bf8');
+
 // Pagination
 define('ITEMS_PER_PAGE', 25);
 
@@ -75,8 +85,8 @@ define('DISPLAY_DATE_FORMAT', 'M d, Y');
 define('DISPLAY_DATETIME_FORMAT', 'M d, Y h:i A');
 
 // Currency
-define('CURRENCY_SYMBOL', '$');
-define('CURRENCY_CODE', 'USD');
+define('CURRENCY_SYMBOL', 'Tshs.');
+define('CURRENCY_CODE', 'TZS');
 
 // Timezone
 date_default_timezone_set('UTC');

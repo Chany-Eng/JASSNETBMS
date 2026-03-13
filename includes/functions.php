@@ -1,5 +1,9 @@
 <?php
-session_start();
+// Keep legacy pages on the same session cookie used by the MVC entry points.
+if (session_status() === PHP_SESSION_NONE) {
+    session_name('JASSNET_SESSION');
+    session_start();
+}
 
 // Include config
 require_once __DIR__ . '/../config.php';
@@ -88,7 +92,7 @@ function jassnet_sms($phone, $message) {
 // Function to redirect if not authorized
 function requirePermission($required_roles) {
     if (!hasPermission($required_roles)) {
-        header("Location: dashboard.php?error=unauthorized");
+        header("Location: ../dashboard.php?error=unauthorized");
         exit();
     }
 }
@@ -97,6 +101,62 @@ function requirePermission($required_roles) {
 function sanitize($data) {
     global $conn;
     return $conn->real_escape_string(trim($data));
+}
+
+function ensureInventorySoftDeleteSchema(mysqli $conn) {
+    $isDeletedColumn = $conn->query("SHOW COLUMNS FROM inventory LIKE 'is_deleted'");
+    if ($isDeletedColumn && $isDeletedColumn->num_rows === 0) {
+        $conn->query("ALTER TABLE inventory ADD COLUMN is_deleted TINYINT(1) NOT NULL DEFAULT 0 AFTER status");
+    }
+
+    $deletedAtColumn = $conn->query("SHOW COLUMNS FROM inventory LIKE 'deleted_at'");
+    if ($deletedAtColumn && $deletedAtColumn->num_rows === 0) {
+        $conn->query("ALTER TABLE inventory ADD COLUMN deleted_at DATETIME NULL AFTER is_deleted");
+    }
+}
+
+function getSuccessActorLabel($user = null) {
+    if (is_array($user)) {
+        $fullName = trim((string) ($user['full_name'] ?? ''));
+        $username = trim((string) ($user['username'] ?? ''));
+        return $fullName !== '' ? $fullName : $username;
+    }
+
+    $sessionFullName = trim((string) ($_SESSION['full_name'] ?? ''));
+    $sessionUsername = trim((string) ($_SESSION['username'] ?? ''));
+    if ($sessionFullName !== '') {
+        return $sessionFullName;
+    }
+    if ($sessionUsername !== '') {
+        return $sessionUsername;
+    }
+
+    $currentUser = getCurrentUser();
+    if (!$currentUser) {
+        return '';
+    }
+
+    $fullName = trim((string) ($currentUser['full_name'] ?? ''));
+    $username = trim((string) ($currentUser['username'] ?? ''));
+    return $fullName !== '' ? $fullName : $username;
+}
+
+function formatSuccessMessage($message, $user = null) {
+    $message = trim((string) $message);
+    if ($message === '') {
+        return '';
+    }
+
+    $actor = getSuccessActorLabel($user);
+    if ($actor === '') {
+        return $message;
+    }
+
+    if (stripos($message, $actor) !== false) {
+        return $message;
+    }
+
+    return $message . ' By: ' . $actor;
 }
 
 // Function to upload file
@@ -136,6 +196,7 @@ function uploadFile($file, $target_dir = "uploads/") {
 // Function to get dashboard stats
 function getDashboardStats() {
     global $conn;
+    ensureInventorySoftDeleteSchema($conn);
     $stats = [];
     
     // Total Income Today
@@ -165,7 +226,7 @@ function getDashboardStats() {
     $stats['net_profit'] = $stats['income_month'] - $stats['approved_expenses'];
     
     // Low Stock Items
-    $result = $conn->query("SELECT COUNT(*) as count FROM inventory WHERE quantity < 5");
+    $result = $conn->query("SELECT COUNT(*) as count FROM inventory WHERE quantity < 5 AND COALESCE(is_deleted, 0) = 0");
     $stats['low_stock'] = $result->fetch_assoc()['count'] ?? 0;
     
     return $stats;

@@ -5,13 +5,14 @@
  * Initialize all application settings, load config, autoloader, and databases
  */
 
-// Define base directory
-if (!defined('APP_ROOT')) {
-    define('APP_ROOT', dirname(dirname(__FILE__)));
-}
+// Load configuration first using a direct path.
+// config.php defines APP_ROOT and other application constants.
+require_once dirname(__DIR__) . '/config/config.php';
 
-// Load configuration
-require_once APP_ROOT . '/config/config.php';
+// Fallback in case APP_ROOT is not defined by configuration.
+if (!defined('APP_ROOT')) {
+    define('APP_ROOT', dirname(__DIR__));
+}
 
 // Load autoloader
 require_once APP_ROOT . '/config/Autoloader.php';

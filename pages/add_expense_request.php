@@ -37,83 +37,113 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 include '../includes/header.php';
 ?>
 
-<div class="main-content">
-    <div class="container-fluid py-4">
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h2 class="mb-0"><i class="fas fa-plus"></i> Submit Expense Request</h2>
-                    <a href="view_expense_requests.php" class="btn btn-secondary">
-                        <i class="fas fa-arrow-left"></i> Back to Requests
-                    </a>
+<style>
+    .expense-hero {
+        background: linear-gradient(120deg, #0f4c81 0%, #2a6f97 100%);
+        color: #fff;
+        border-radius: 14px;
+        padding: 1.25rem 1.5rem;
+        box-shadow: 0 10px 24px rgba(15, 76, 129, 0.25);
+    }
+
+    .section-label {
+        font-weight: 700;
+        font-size: 0.92rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #1f4f82;
+        margin-bottom: 0.8rem;
+    }
+
+    .form-note {
+        font-size: 0.85rem;
+        color: #6c757d;
+    }
+</style>
+
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="expense-hero d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h2 class="mb-1"><i class="fas fa-file-signature"></i> Submit Expense Request</h2>
+                    <div class="small">Capture clear details so approvals move faster.</div>
                 </div>
+                <a href="view_expense_requests.php" class="btn btn-light">
+                    <i class="fas fa-arrow-left"></i> Back to Requests
+                </a>
             </div>
         </div>
+    </div>
 
-        <?php if ($error): ?>
-            <div class="alert alert-danger" role="alert">
-                <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
-            </div>
-        <?php endif; ?>
+    <?php if ($error): ?>
+        <div class="alert alert-danger" role="alert">
+            <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
+        </div>
+    <?php endif; ?>
 
-        <div class="row">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0">Expense Request Form</h5>
-                    </div>
-                    <div class="card-body">
-                        <form method="POST">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label for="department" class="form-label">Department <span class="text-danger">*</span></label>
-                                        <input type="text" class="form-control" id="department" name="department" required>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="category" class="form-label">Expense Category <span class="text-danger">*</span></label>
-                                        <select class="form-select" id="category" name="category" required>
-                                            <option value="">Select Category</option>
-                                            <option value="Fuel">Fuel</option>
-                                            <option value="Equipment">Equipment</option>
-                                            <option value="Maintenance">Maintenance</option>
-                                            <option value="Transport">Transport</option>
-                                            <option value="Salary">Salary</option>
-                                            <option value="Other">Other</option>
-                                        </select>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="amount_requested" class="form-label">Amount Requested (Tshs.) <span class="text-danger">*</span></label>
-                                        <input type="number" class="form-control" id="amount_requested" name="amount_requested" step="0.01" required>
-                                    </div>
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-pen"></i> Expense Request Form</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="section-label">Basic Information</div>
+                                <div class="mb-3">
+                                    <label for="department" class="form-label">Department <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="department" name="department" value="<?php echo htmlspecialchars($_POST['department'] ?? ''); ?>" required>
                                 </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label for="reason" class="form-label">Reason for Expense <span class="text-danger">*</span></label>
-                                        <textarea class="form-control" id="reason" name="reason" rows="2" required></textarea>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="project_ref" class="form-label">Project / Job Reference</label>
-                                        <input type="text" class="form-control" id="project_ref" name="project_ref">
-                                    </div>
+                                <div class="mb-3">
+                                    <label for="category" class="form-label">Expense Category <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="category" name="category" required>
+                                        <option value="">Select Category</option>
+                                        <?php
+                                        $categories = ['Fuel', 'Equipment', 'Maintenance', 'Transport', 'Salary', 'Other'];
+                                        $selectedCategory = $_POST['category'] ?? '';
+                                        foreach ($categories as $cat):
+                                        ?>
+                                            <option value="<?php echo $cat; ?>" <?php echo $selectedCategory === $cat ? 'selected' : ''; ?>><?php echo $cat; ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="amount_requested" class="form-label">Amount Requested (Tshs.) <span class="text-danger">*</span></label>
+                                    <input type="number" class="form-control" id="amount_requested" name="amount_requested" step="0.01" min="0" value="<?php echo htmlspecialchars($_POST['amount_requested'] ?? ''); ?>" required>
+                                    <div class="form-note">Use total expected amount including all related costs.</div>
                                 </div>
                             </div>
-                            <div class="mb-3">
-                                <label for="description" class="form-label">Description <span class="text-danger">*</span></label>
-                                <textarea class="form-control" id="description" name="description" rows="4" required></textarea>
+                            <div class="col-md-6">
+                                <div class="section-label">Purpose</div>
+                                <div class="mb-3">
+                                    <label for="reason" class="form-label">Reason for Expense <span class="text-danger">*</span></label>
+                                    <textarea class="form-control" id="reason" name="reason" rows="3" required><?php echo htmlspecialchars($_POST['reason'] ?? ''); ?></textarea>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="project_ref" class="form-label">Project / Job Reference</label>
+                                    <input type="text" class="form-control" id="project_ref" name="project_ref" value="<?php echo htmlspecialchars($_POST['project_ref'] ?? ''); ?>">
+                                </div>
                             </div>
-                            <div class="mb-3">
-                                <label for="notes" class="form-label">Notes</label>
-                                <textarea class="form-control" id="notes" name="notes" rows="2"></textarea>
-                            </div>
-                            <div class="d-flex gap-2">
-                                <button type="submit" name="add_expense_request" class="btn btn-primary">
-                                    <i class="fas fa-paper-plane"></i> Submit Request
-                                </button>
-                                <a href="view_expense_requests.php" class="btn btn-secondary">Cancel</a>
-                            </div>
-                        </form>
-                    </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description <span class="text-danger">*</span></label>
+                            <textarea class="form-control" id="description" name="description" rows="4" required><?php echo htmlspecialchars($_POST['description'] ?? ''); ?></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="notes" class="form-label">Notes</label>
+                            <textarea class="form-control" id="notes" name="notes" rows="2"><?php echo htmlspecialchars($_POST['notes'] ?? ''); ?></textarea>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" name="add_expense_request" class="btn btn-primary">
+                                <i class="fas fa-paper-plane"></i> Submit Request
+                            </button>
+                            <a href="view_expense_requests.php" class="btn btn-outline-secondary">Cancel</a>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>

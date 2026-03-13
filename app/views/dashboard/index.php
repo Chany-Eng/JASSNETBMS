@@ -4,76 +4,142 @@ $pageTitle = 'Dashboard';
 ?>
 
 <?php ob_start(); ?>
+<style>
+    .dash-hero {
+        border-radius: 14px;
+        padding: 1.2rem 1.4rem;
+        background: linear-gradient(120deg, #17406d 0%, #2d6a8a 100%);
+        color: #fff;
+        box-shadow: 0 14px 30px rgba(23, 64, 109, 0.24);
+    }
+
+    .kpi-card {
+        border-radius: 12px;
+        border: 1px solid #dce8f2;
+        background: #fff;
+        height: 100%;
+    }
+
+    .kpi-title {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #5c7288;
+        margin-bottom: 0.25rem;
+    }
+
+    .kpi-value {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #183b56;
+        margin: 0;
+    }
+
+    .chart-wrap {
+        height: 290px;
+    }
+
+    .table thead th {
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+    }
+
+</style>
+
 <div class="container-fluid">
-    <!-- statistics cards -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="dash-hero d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h2 class="mb-1 text-white">Operations Dashboard</h2>
+                    <div class="small">Snapshot of income, expenses, inventory, and station work.</div>
+                </div>
+                <div class="text-end small">
+                    <div>Today: <?= date('M d, Y') ?></div>
+                    <div>Net Profit: Tshs. <?= number_format($stats['net_profit'] ?? 0, 2) ?></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <?php if (!empty($message)): ?>
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="alert alert-<?= htmlspecialchars($message['type'] === 'error' ? 'danger' : $message['type']) ?> mb-0">
+                <?= htmlspecialchars($message['text']) ?>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+
     <div class="row g-3 mb-4">
         <?php if ($controller->hasPermission(['Sales', 'Super Admin'])): ?>
-        <div class="col-md-2">
-            <div class="card shadow-sm">
+        <div class="col-md-4 col-xl-2">
+            <div class="card kpi-card">
                 <div class="card-body">
-                    <h6>Total Customers</h6>
-                    <h3><?= number_format($stats['total_customers'] ?? 0) ?></h3>
+                    <div class="kpi-title">Total Customers</div>
+                    <p class="kpi-value"><?= number_format($stats['total_customers'] ?? 0) ?></p>
                 </div>
             </div>
         </div>
-        <div class="col-md-2">
-            <div class="card shadow-sm">
+        <div class="col-md-4 col-xl-2">
+            <div class="card kpi-card">
                 <div class="card-body">
-                    <h6>Active PPPoE Users</h6>
-                    <h3><?= number_format($stats['active_pppoe_users'] ?? 0) ?></h3>
+                    <div class="kpi-title">Active PPPoE</div>
+                    <p class="kpi-value"><?= number_format($stats['active_pppoe_users'] ?? 0) ?></p>
                 </div>
             </div>
         </div>
-        <div class="col-md-2">
-            <div class="card shadow-sm">
+        <div class="col-md-4 col-xl-2">
+            <div class="card kpi-card">
                 <div class="card-body">
-                    <h6>Active Hotspot Users</h6>
-                    <h3><?= number_format($stats['active_hotspot_users'] ?? 0) ?></h3>
+                    <div class="kpi-title">Active Hotspot</div>
+                    <p class="kpi-value"><?= number_format($stats['active_hotspot_users'] ?? 0) ?></p>
                 </div>
             </div>
         </div>
         <?php endif; ?>
 
         <?php if ($controller->hasPermission(['Sales', 'Accountant', 'Director', 'Super Admin'])): ?>
-        <div class="col-md-2">
-            <div class="card shadow-sm">
+        <div class="col-md-4 col-xl-2">
+            <div class="card kpi-card">
                 <div class="card-body">
-                    <h6>Monthly Income</h6>
-                    <h3><?= number_format($stats['income_month'] ?? 0, 2) ?></h3>
+                    <div class="kpi-title">Monthly Income</div>
+                    <p class="kpi-value">Tshs. <?= number_format($stats['income_month'] ?? 0, 2) ?></p>
                 </div>
             </div>
         </div>
         <?php endif; ?>
 
         <?php if ($controller->hasPermission(['Accountant', 'Director', 'Super Admin'])): ?>
-        <div class="col-md-2">
-            <div class="card shadow-sm">
+        <div class="col-md-4 col-xl-2">
+            <div class="card kpi-card">
                 <div class="card-body">
-                    <h6>Total Expenses</h6>
-                    <h3><?= number_format($stats['approved_expenses'] ?? 0, 2) ?></h3>
+                    <div class="kpi-title">Total Expenses</div>
+                    <p class="kpi-value">Tshs. <?= number_format($stats['approved_expenses'] ?? 0, 2) ?></p>
                 </div>
             </div>
         </div>
         <?php endif; ?>
 
         <?php if ($controller->hasPermission(['Manager', 'Super Admin'])): ?>
-        <div class="col-md-2">
-            <div class="card shadow-sm">
+        <div class="col-md-4 col-xl-2">
+            <div class="card kpi-card">
                 <div class="card-body">
-                    <h6>Inventory Value</h6>
-                    <h3><?= number_format($stats['inventory_value'] ?? 0, 2) ?></h3>
+                    <div class="kpi-title">Inventory Value</div>
+                    <p class="kpi-value">Tshs. <?= number_format($stats['inventory_value'] ?? 0, 2) ?></p>
                 </div>
             </div>
         </div>
         <?php endif; ?>
     </div>
 
-    <!-- charts section -->
     <div class="row g-4 mb-4">
         <div class="col-xl-6">
             <div class="card">
                 <div class="card-header">Income vs Expenses (last 6 months)</div>
-                <div class="card-body">
+                <div class="card-body chart-wrap">
                     <canvas id="incomeExpenseChart"></canvas>
                 </div>
             </div>
@@ -81,7 +147,7 @@ $pageTitle = 'Dashboard';
         <div class="col-xl-6">
             <div class="card">
                 <div class="card-header">Customer Growth (unique per month)</div>
-                <div class="card-body">
+                <div class="card-body chart-wrap">
                     <canvas id="customerGrowthChart"></canvas>
                 </div>
             </div>
@@ -92,7 +158,7 @@ $pageTitle = 'Dashboard';
         <div class="col-xl-6">
             <div class="card">
                 <div class="card-header">Inventory Additions</div>
-                <div class="card-body">
+                <div class="card-body chart-wrap">
                     <canvas id="inventoryUsageChart"></canvas>
                 </div>
             </div>
@@ -100,15 +166,14 @@ $pageTitle = 'Dashboard';
         <div class="col-xl-6">
             <div class="card">
                 <div class="card-header">Station Progress</div>
-                <div class="card-body">
+                <div class="card-body chart-wrap">
                     <canvas id="stationProgressChart"></canvas>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- activity panels -->
-    <div class="row g-4">
+    <div class="row g-4 mb-4">
         <div class="col-lg-6">
             <div class="card">
                 <div class="card-header">Recent Income</div>
@@ -116,13 +181,17 @@ $pageTitle = 'Dashboard';
                     <table class="table mb-0">
                         <thead><tr><th>Date</th><th>Customer</th><th>Amount</th></tr></thead>
                         <tbody>
-                        <?php foreach ($recent_income as $inc): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($inc['date']) ?></td>
-                                <td><?= htmlspecialchars($inc['customer_name']) ?></td>
-                                <td><?= number_format($inc['amount'],2) ?></td>
-                            </tr>
-                        <?php endforeach; ?>
+                        <?php if (!empty($recent_income)): ?>
+                            <?php foreach ($recent_income as $inc): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($inc['date']) ?></td>
+                                    <td><?= htmlspecialchars($inc['customer_name']) ?></td>
+                                    <td>Tshs. <?= number_format($inc['amount'], 2) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <tr><td colspan="3" class="text-center text-muted">No recent income records</td></tr>
+                        <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
@@ -135,13 +204,17 @@ $pageTitle = 'Dashboard';
                     <table class="table mb-0">
                         <thead><tr><th>Date</th><th>Amount</th><th>Status</th></tr></thead>
                         <tbody>
-                        <?php foreach ($recent_expenses as $exp): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($exp['request_date']) ?></td>
-                                <td><?= number_format($exp['amount_requested'],2) ?></td>
-                                <td><?= htmlspecialchars($exp['status']) ?></td>
-                            </tr>
-                        <?php endforeach; ?>
+                        <?php if (!empty($recent_expenses)): ?>
+                            <?php foreach ($recent_expenses as $exp): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($exp['request_date']) ?></td>
+                                    <td>Tshs. <?= number_format($exp['amount_requested'], 2) ?></td>
+                                    <td><?= htmlspecialchars($exp['status']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <tr><td colspan="3" class="text-center text-muted">No recent expense requests</td></tr>
+                        <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
@@ -157,12 +230,16 @@ $pageTitle = 'Dashboard';
                     <table class="table mb-0">
                         <thead><tr><th>Item</th><th>Qty</th></tr></thead>
                         <tbody>
-                        <?php foreach ($low_stock_items as $item): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($item['item_name']) ?></td>
-                                <td><?= htmlspecialchars($item['quantity']) ?></td>
-                            </tr>
-                        <?php endforeach; ?>
+                        <?php if (!empty($low_stock_items)): ?>
+                            <?php foreach ($low_stock_items as $item): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($item['item_name']) ?></td>
+                                    <td><?= htmlspecialchars($item['quantity']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <tr><td colspan="2" class="text-center text-muted">No low stock alerts</td></tr>
+                        <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
@@ -175,13 +252,17 @@ $pageTitle = 'Dashboard';
                     <table class="table mb-0">
                         <thead><tr><th>Date</th><th>Name</th><th>Status</th></tr></thead>
                         <tbody>
-                        <?php foreach ($recent_stations as $st): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($st['request_date']) ?></td>
-                                <td><?= htmlspecialchars($st['station_name']) ?></td>
-                                <td><?= htmlspecialchars($st['status']) ?></td>
-                            </tr>
-                        <?php endforeach; ?>
+                        <?php if (!empty($recent_stations)): ?>
+                            <?php foreach ($recent_stations as $st): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($st['request_date']) ?></td>
+                                    <td><?= htmlspecialchars($st['station_name']) ?></td>
+                                    <td><?= htmlspecialchars($st['status']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <tr><td colspan="3" class="text-center text-muted">No station requests found</td></tr>
+                        <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
@@ -192,33 +273,7 @@ $pageTitle = 'Dashboard';
 
 <script>
     // prepare chart data from server-side variables
-    const chartData = <?= json_encode($controller->getChartData()); ?>;
-
-    function genLineChart(ctxId, label, data1, data2, color1, color2) {
-        const ctx = document.getElementById(ctxId).getContext('2d');
-        return new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: chartData.months,
-                datasets: [
-                    {
-                        label: label + ' Income',
-                        data: data1,
-                        borderColor: color1,
-                        backgroundColor: color1 + '44',
-                        fill: true
-                    },
-                    {
-                        label: label + ' Expenses',
-                        data: data2,
-                        borderColor: color2,
-                        backgroundColor: color2 + '44',
-                        fill: true
-                    }
-                ]
-            }
-        });
-    }
+    const chartData = <?= json_encode($chart_data ?? ['months' => [], 'income' => [], 'expenses' => [], 'customerGrowth' => [], 'inventoryUsage' => [], 'stationProgress' => []]); ?>;
 
     document.addEventListener('DOMContentLoaded', function() {
         new Chart(document.getElementById('incomeExpenseChart').getContext('2d'), {
@@ -237,6 +292,10 @@ $pageTitle = 'Dashboard';
                         backgroundColor: '#dc3545'
                     }
                 ]
+            },
+            options: {
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' } }
             }
         });
 
@@ -249,8 +308,13 @@ $pageTitle = 'Dashboard';
                     data: chartData.customerGrowth,
                     borderColor: '#007bff',
                     backgroundColor: '#007bff44',
-                    fill: true
+                    fill: true,
+                    tension: 0.35
                 }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } }
             }
         });
 
@@ -263,8 +327,13 @@ $pageTitle = 'Dashboard';
                     data: chartData.inventoryUsage,
                     borderColor: '#ffc107',
                     backgroundColor: '#ffc10744',
-                    fill: true
+                    fill: true,
+                    tension: 0.35
                 }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } }
             }
         });
 
@@ -288,8 +357,13 @@ $pageTitle = 'Dashboard';
                 labels: chartData.months,
                 datasets: datasets
             },
-            options: { scales: { x: { stacked: true }, y: { stacked: true } } }
+            options: {
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' } },
+                scales: { x: { stacked: true }, y: { stacked: true } }
+            }
         });
+
     });
 </script>
 

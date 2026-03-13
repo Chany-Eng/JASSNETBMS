@@ -10,8 +10,13 @@ CREATE TABLE users (
     password VARCHAR(255) NOT NULL,
     role ENUM('Sales', 'Technician', 'Store Keeper', 'Manager', 'Director', 'Accountant', 'Super Admin') NOT NULL,
     full_name VARCHAR(100) NOT NULL,
+    gender VARCHAR(20),
     phone VARCHAR(20),
     email VARCHAR(100),
+    bank_name VARCHAR(100),
+    bank_account_number VARCHAR(50),
+    payout_phone VARCHAR(20),
+    preferred_payout_channel VARCHAR(20) DEFAULT 'mobile',
     address TEXT,
     profile_photo VARCHAR(255),
     employee_id VARCHAR(50) UNIQUE,
@@ -49,8 +54,11 @@ CREATE TABLE expense_requests (
     notes TEXT,
     status ENUM('Pending Manager Approval', 'Pending Director Approval', 'Pending Accountant Processing', 'Waiting for Receipt', 'Completed', 'Rejected') DEFAULT 'Pending Manager Approval',
     manager_approved BOOLEAN DEFAULT NULL,
+    manager_comment TEXT,
     director_approved BOOLEAN DEFAULT NULL,
+    director_comment TEXT,
     accountant_processed BOOLEAN DEFAULT NULL,
+    accountant_comment TEXT,
     receipt_uploaded BOOLEAN DEFAULT NULL,
     FOREIGN KEY (requested_by) REFERENCES users(id)
 );
@@ -63,8 +71,41 @@ CREATE TABLE expense_payments (
     payment_method VARCHAR(50),
     payment_date DATE,
     accountant_id INT,
+    payout_reference VARCHAR(120),
+    payment_notes TEXT,
     FOREIGN KEY (expense_request_id) REFERENCES expense_requests(id),
     FOREIGN KEY (accountant_id) REFERENCES users(id)
+);
+
+CREATE TABLE snippe_payouts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    expense_request_id INT NULL,
+    station_request_id INT NULL,
+    user_id INT NOT NULL,
+    provider VARCHAR(50) NOT NULL DEFAULT 'snippe',
+    payout_channel VARCHAR(30) NOT NULL DEFAULT 'mobile',
+    recipient_name VARCHAR(150) NOT NULL,
+    recipient_phone VARCHAR(20),
+    bank_name VARCHAR(100),
+    bank_account_number VARCHAR(50),
+    amount_value DECIMAL(12,2) NOT NULL DEFAULT 0,
+    fees_value DECIMAL(12,2) NOT NULL DEFAULT 0,
+    total_value DECIMAL(12,2) NOT NULL DEFAULT 0,
+    reference VARCHAR(120) NOT NULL UNIQUE,
+    external_reference VARCHAR(120),
+    provider_payout_id VARCHAR(120),
+    narration VARCHAR(255),
+    failure_reason VARCHAR(255),
+    status VARCHAR(30) NOT NULL DEFAULT 'pending',
+    raw_response LONGTEXT,
+    webhook_payload LONGTEXT,
+    sms_sent_at DATETIME,
+    completed_at DATETIME,
+    created_by INT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (expense_request_id) REFERENCES expense_requests(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 -- Receipts table
@@ -90,6 +131,8 @@ CREATE TABLE inventory (
     supplier VARCHAR(100),
     purchase_date DATE,
     status ENUM('Available', 'Installed', 'Damaged') DEFAULT 'Available',
+    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+    deleted_at DATETIME NULL,
     notes TEXT
 );
 
@@ -123,8 +166,19 @@ CREATE TABLE station_requests (
     coverage_area VARCHAR(100),
     installation_type ENUM('Hotspot', 'Tower', 'Relay', 'Fiber Node'),
     total_estimated_cost DECIMAL(10,2),
-    status ENUM('Pending Approval', 'Approved', 'Awaiting Accountant Approval', 'Equipment Issued', 'Installation in Progress', 'Completed', 'Rejected') DEFAULT 'Pending Approval',
+    status ENUM('Pending Manager Approval', 'Pending Director Approval', 'Approved', 'Awaiting Accountant Approval', 'Pending Store Keeper Approval', 'Ready for Installation', 'Equipment Issued', 'Installation in Progress', 'Completed', 'Rejected') DEFAULT 'Pending Manager Approval',
     approved_by INT,
+    manager_approved_by INT NULL,
+    manager_approved_at DATETIME NULL,
+    manager_comment TEXT,
+    director_approved_by INT NULL,
+    director_approved_at DATETIME NULL,
+    director_comment TEXT,
+    accountant_approved_by INT NULL,
+    accountant_approved_at DATETIME NULL,
+    accountant_comment TEXT,
+    storekeeper_approved_by INT NULL,
+    storekeeper_approved_at DATETIME NULL,
     FOREIGN KEY (requested_by) REFERENCES users(id),
     FOREIGN KEY (approved_by) REFERENCES users(id)
 );

@@ -63,10 +63,13 @@ class Database
             $this->lastError = $e->getMessage();
             if (APP_DEBUG) {
                 error_log('Database Connection Error: ' . $e->getMessage());
-                die('Database connection failed: ' . $e->getMessage());
-            } else {
-                die('Database connection failed. Please contact administrator.');
             }
+
+            throw new \RuntimeException(
+                APP_DEBUG
+                    ? 'Database connection failed: ' . $e->getMessage()
+                    : 'Database connection failed. Please contact administrator.'
+            );
         }
     }
 

@@ -1,3 +1,26 @@
+            </div>
+            <footer class="app-site-footer">
+                <div class="row g-4 align-items-center mx-0">
+                    <div class="col-lg-5 px-0">
+                        <h5 class="text-white mb-2">JASSNET Business Management System</h5>
+                        <p class="mb-0 small">Operations, approvals, payouts, inventory, stations, and announcements managed in one workspace.</p>
+                    </div>
+                    <div class="col-lg-4 px-0">
+                        <div class="small text-uppercase fw-semibold mb-2" style="letter-spacing: 0.08em; color: #93c5fd;">Quick Access</div>
+                        <div class="d-flex flex-wrap gap-3 small">
+                            <a href="<?php echo $base_path; ?>dashboard.php" class="text-decoration-none">Dashboard</a>
+                            <a href="<?php echo $base_path; ?>pages/view_income.php" class="text-decoration-none">Income</a>
+                            <a href="<?php echo $base_path; ?>pages/view_expense_requests.php" class="text-decoration-none">Expenses</a>
+                            <a href="<?php echo $base_path; ?>pages/stations.php" class="text-decoration-none">Stations</a>
+                        </div>
+                    </div>
+                    <div class="col-lg-3 px-0 text-lg-end">
+                        <div class="small text-uppercase fw-semibold mb-2" style="letter-spacing: 0.08em; color: #93c5fd;">Copyright</div>
+                        <div class="small">&copy; <?php echo date('Y'); ?> JASSNET Incame. All rights reserved.</div>
+                        <div class="small">Built for internal business operations.</div>
+                    </div>
+                </div>
+            </footer>
         </div>
     </main>
 
@@ -11,6 +34,7 @@
             const sidebarOverlay = document.getElementById('sidebarOverlay');
             const sidebarToggle = document.getElementById('sidebarToggle');
             const sidebarCollapse = document.getElementById('sidebarCollapse');
+            const loadingOverlay = document.getElementById('appLoadingOverlay');
 
             // Mobile sidebar toggle
             if (sidebarToggle) {
@@ -93,6 +117,45 @@
                     });
                 }
             });
+
+            const shouldShowLoaderForLink = function(link) {
+                if (!link || link.hasAttribute('data-no-loader')) {
+                    return false;
+                }
+
+                const href = link.getAttribute('href') || '';
+                if (href === '' || href === '#' || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) {
+                    return false;
+                }
+
+                if (link.target === '_blank' || href.includes('#')) {
+                    return false;
+                }
+
+                return true;
+            };
+
+            if (loadingOverlay) {
+                document.querySelectorAll('a').forEach(function(link) {
+                    link.addEventListener('click', function() {
+                        if (shouldShowLoaderForLink(link)) {
+                            loadingOverlay.classList.add('show');
+                        }
+                    });
+                });
+
+                document.querySelectorAll('form').forEach(function(form) {
+                    form.addEventListener('submit', function() {
+                        if (!form.hasAttribute('data-no-loader')) {
+                            loadingOverlay.classList.add('show');
+                        }
+                    });
+                });
+
+                window.addEventListener('pageshow', function() {
+                    loadingOverlay.classList.remove('show');
+                });
+            }
         });
     </script>
 </body>

@@ -1,5 +1,6 @@
 <?php
 require_once '../includes/functions.php';
+require_once '../includes/snippe_payouts.php';
 
 if (!isLoggedIn()) {
     header("Location: ../index.php");
@@ -7,6 +8,8 @@ if (!isLoggedIn()) {
 }
 
 requirePermission(['Super Admin']);
+snippeEnsureUserPayoutFields($conn);
+$bankOptions = snippeRenderBankOptions();
 
 $message = '';
 $error = '';
@@ -44,11 +47,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         // auto-generate employee id
         $employee_id = generateEmployeeId($conn);
         $location = sanitize($_POST['location']);
+        $gender = sanitize($_POST['gender'] ?? '');
         $phone = sanitize($_POST['phone']);
         $email = sanitize($_POST['email']);
+        $bank_name = sanitize($_POST['bank_name'] ?? '');
+        $bank_account_number = sanitize($_POST['bank_account_number'] ?? '');
+        $payout_phone = sanitize($_POST['payout_phone'] ?? '');
+        $preferred_payout_channel = sanitize($_POST['preferred_payout_channel'] ?? 'mobile');
 
-        $stmt = $conn->prepare("INSERT INTO users (username, password, role, full_name, employee_id, location, phone, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("ssssssss", $username, $password, $role, $full_name, $employee_id, $location, $phone, $email);
+        $stmt = $conn->prepare("INSERT INTO users (username, password, role, full_name, employee_id, location, gender, phone, email, bank_name, bank_account_number, payout_phone, preferred_payout_channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("sssssssssssss", $username, $password, $role, $full_name, $employee_id, $location, $gender, $phone, $email, $bank_name, $bank_account_number, $payout_phone, $preferred_payout_channel);
 
         if ($stmt->execute()) {
             $_SESSION['success_message'] = 'User added successfully';
@@ -68,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <div id="successToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" style="font-size: 1.2rem; padding: 1rem; min-width: 400px;">
             <div class="d-flex">
                 <div class="toast-body">
-                    <i class="fas fa-check-circle me-2" style="font-size: 1.5rem;"></i> <?php echo $success_message; ?>
+                    <i class="fas fa-check-circle me-2" style="font-size: 1.5rem;"></i> <?php echo htmlspecialchars(formatSuccessMessage($success_message)); ?>
                 </div>
                 <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
             </div>
@@ -88,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 </div>
 
 <?php if ($message): ?>
-    <div class="alert alert-success"><?php echo $message; ?></div>
+    <div class="alert alert-success"><?php echo htmlspecialchars(formatSuccessMessage($message)); ?></div>
 <?php endif; ?>
 
 <?php if ($error): ?>
@@ -143,12 +151,45 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                 <input type="text" class="form-control" id="location" name="location">
                             </div>
                             <div class="mb-3">
+                                <label for="gender" class="form-label">Gender</label>
+                                <select class="form-select" id="gender" name="gender">
+                                    <option value="">Select gender</option>
+                                    <option value="Male">Male</option>
+                                    <option value="Female">Female</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
                                 <label for="phone" class="form-label">Phone Number</label>
                                 <input type="tel" class="form-control" id="phone" name="phone">
                             </div>
                             <div class="mb-3">
                                 <label for="email" class="form-label">Email Address</label>
                                 <input type="email" class="form-control" id="email" name="email">
+                            </div>
+                            <div class="mb-3">
+                                <label for="bank_name" class="form-label">Bank</label>
+                                <select class="form-select" id="bank_name" name="bank_name">
+                                    <?php echo $bankOptions; ?>
+                                </select>
+                                <div class="form-text">Choose the exact Snippe bank code for automated bank payouts.</div>
+                                <div class="mt-2">
+                                    <a href="supported_banks.php" class="small text-decoration-none"><i class="fas fa-university"></i> View supported bank codes</a>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="bank_account_number" class="form-label">Bank Account No.</label>
+                                <input type="text" class="form-control" id="bank_account_number" name="bank_account_number">
+                            </div>
+                            <div class="mb-3">
+                                <label for="payout_phone" class="form-label">Payout Phone</label>
+                                <input type="tel" class="form-control" id="payout_phone" name="payout_phone" placeholder="2557XXXXXXXX">
+                            </div>
+                            <div class="mb-3">
+                                <label for="preferred_payout_channel" class="form-label">Preferred Payout Channel</label>
+                                <select class="form-select" id="preferred_payout_channel" name="preferred_payout_channel">
+                                    <option value="mobile">Mobile Money</option>
+                                    <option value="bank">Bank Transfer</option>
+                                </select>
                             </div>
                         </div>
                     </div>

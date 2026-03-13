@@ -22,7 +22,6 @@ class User extends BaseModel
         'phone',
         'address',
         'password_last_changed',
-        'last_login',
     ];
     protected $timestamps = true;
 
@@ -64,7 +63,14 @@ class User extends BaseModel
             return null;
         }
 
-        if ($user['status'] !== 'active') {
+        $isActive = true;
+        if (array_key_exists('status', $user)) {
+            $isActive = ($user['status'] === 'active');
+        } elseif (array_key_exists('is_active', $user)) {
+            $isActive = (bool) $user['is_active'];
+        }
+
+        if (!$isActive) {
             $this->addError('username', 'Account is inactive');
             return null;
         }
@@ -153,9 +159,14 @@ class User extends BaseModel
      */
     public function updateLastLogin($userId)
     {
-        return $this->update($userId, [
-            'last_login' => date(DATETIME_FORMAT),
-        ]);
+        try {
+            return $this->update($userId, [
+                'last_login' => date(DATETIME_FORMAT),
+            ]);
+        } catch (\Exception $e) {
+            // Column may not exist in this database version — silently skip
+            return false;
+        }
     }
 
     /**

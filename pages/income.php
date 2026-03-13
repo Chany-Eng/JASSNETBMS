@@ -6,7 +6,7 @@ if (!isLoggedIn()) {
     exit();
 }
 
-requirePermission(['Sales', 'Technician', 'Super Admin']);
+requirePermission(['Sales', 'Super Admin']);
 
 $message = '';
 $error = '';
@@ -59,7 +59,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
 // Get income records with pagination
 $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
-$limit = 10;
+$allowedPerPage = [10, 25, 50, 100, 200];
+$limit = isset($_GET['per_page']) ? intval($_GET['per_page']) : 10;
+if (!in_array($limit, $allowedPerPage, true)) {
+    $limit = 10;
+}
 $offset = ($page - 1) * $limit;
 
 $search = isset($_GET['search']) ? sanitize($_GET['search']) : '';
@@ -82,7 +86,7 @@ $income_records = $conn->query("SELECT i.*, u.full_name FROM income i JOIN users
         <div id="successToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" style="font-size: 1.2rem; padding: 1rem; min-width: 400px;">
             <div class="d-flex">
                 <div class="toast-body">
-                    <i class="fas fa-check-circle me-2" style="font-size: 1.5rem;"></i> <?php echo $success_message; ?>
+                    <i class="fas fa-check-circle me-2" style="font-size: 1.5rem;"></i> <?php echo htmlspecialchars(formatSuccessMessage($success_message)); ?>
                 </div>
                 <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
             </div>
@@ -97,7 +101,7 @@ $income_records = $conn->query("SELECT i.*, u.full_name FROM income i JOIN users
 </div>
 
 <?php if ($message): ?>
-    <div class="alert alert-success"><?php echo $message; ?></div>
+    <div class="alert alert-success"><?php echo htmlspecialchars(formatSuccessMessage($message)); ?></div>
 <?php endif; ?>
 
 <?php if ($error): ?>
@@ -141,7 +145,7 @@ $income_records = $conn->query("SELECT i.*, u.full_name FROM income i JOIN users
                         </div>
                         <div class="col-md-6">
                             <div class="mb-3">
-                                <label for="amount" class="form-label">Amount Received *</label>
+                                <label for="amount" class="form-label">Amount Received (Tshs.) *</label>
                                 <input type="number" class="form-control" id="amount" name="amount" step="0.01" required>
                             </div>
                             <div class="mb-3">
@@ -180,20 +184,31 @@ $income_records = $conn->query("SELECT i.*, u.full_name FROM income i JOIN users
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5><i class="fas fa-list"></i> Income Records</h5>
-                <form method="GET" class="d-flex">
-                    <input type="text" class="form-control me-2" name="search" placeholder="Search..." value="<?php echo htmlspecialchars($search); ?>">
-                    <button type="submit" class="btn btn-outline-primary">Search</button>
+                <form method="GET" class="row g-2 align-items-center w-100 justify-content-end" style="max-width: 520px;">
+                    <div class="col-sm-6">
+                        <input type="text" class="form-control" name="search" placeholder="Search..." value="<?php echo htmlspecialchars($search); ?>">
+                    </div>
+                    <div class="col-sm-3">
+                        <select class="form-select" name="per_page">
+                            <?php foreach ($allowedPerPage as $perPageOption): ?>
+                                <option value="<?php echo $perPageOption; ?>" <?php echo $limit === $perPageOption ? 'selected' : ''; ?>><?php echo $perPageOption; ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-sm-3">
+                        <button type="submit" class="btn btn-outline-primary w-100">Search</button>
+                    </div>
                 </form>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table table-striped">
+                    <table class="table table-striped" data-table-pagination="server" data-row-number-start="<?php echo $offset + 1; ?>">
                         <thead>
                             <tr>
                                 <th>Date</th>
                                 <th>Customer</th>
                                 <th>Service</th>
-                                <th>Amount</th>
+                                <th>Amount (Tshs.)</th>
                                 <th>Payment</th>
                                 <th>Reference</th>
                                 <th>Recorded By</th>
@@ -206,7 +221,7 @@ $income_records = $conn->query("SELECT i.*, u.full_name FROM income i JOIN users
                                 <td><?php echo date('M d, Y', strtotime($row['date'])); ?></td>
                                 <td><?php echo htmlspecialchars($row['customer_name']); ?></td>
                                 <td><?php echo htmlspecialchars($row['service_type']); ?></td>
-                                <td>$<?php echo number_format($row['amount'], 2); ?></td>
+                                <td>Tshs. <?php echo number_format($row['amount'], 2); ?></td>
                                 <td><?php echo htmlspecialchars($row['payment_method']); ?></td>
                                 <td><?php echo htmlspecialchars($row['transaction_reference']); ?></td>
                                 <td><?php echo htmlspecialchars($row['full_name']); ?></td>
@@ -227,7 +242,7 @@ $income_records = $conn->query("SELECT i.*, u.full_name FROM income i JOIN users
                     <ul class="pagination justify-content-center">
                         <?php for ($i = 1; $i <= $total_pages; $i++): ?>
                         <li class="page-item <?php echo $i == $page ? 'active' : ''; ?>">
-                            <a class="page-link" href="?page=<?php echo $i; ?>&search=<?php echo urlencode($search); ?>"><?php echo $i; ?></a>
+                            <a class="page-link" href="?page=<?php echo $i; ?>&search=<?php echo urlencode($search); ?>&per_page=<?php echo $limit; ?>"><?php echo $i; ?></a>
                         </li>
                         <?php endfor; ?>
                     </ul>

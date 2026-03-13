@@ -60,7 +60,7 @@ abstract class BaseController
      * @param array $requiredRoles
      * @return bool
      */
-    protected function hasPermission($requiredRoles)
+    public function hasPermission($requiredRoles)
     {
         if (!$this->user) {
             return false;
@@ -131,14 +131,12 @@ abstract class BaseController
         $viewPath = APP_ROOT . '/app/views/' . $view . '.php';
 
         if (!file_exists($viewPath)) {
-            die("View not found: $viewPath");
+            die('View not found: ' . htmlspecialchars($viewPath));
         }
 
-        ob_start();
+        // The view itself handles ob_start/ob_get_clean and includes the layout.
+        // Just include it directly — no extra buffering layer needed.
         include $viewPath;
-        $content = ob_get_clean();
-
-        echo $content;
     }
 
     /**
@@ -349,19 +347,23 @@ abstract class BaseController
             return;
         }
 
-        $db = Database::getInstance();
-        $query = "INSERT INTO activity_logs (user_id, action, description, table_name, record_id, created_at) 
-                  VALUES (:user_id, :action, :description, :table, :record_id, :created_at)";
-        
-        $db->prepare($query);
-        $db->bind(':user_id', $this->user['id']);
-        $db->bind(':action', $action);
-        $db->bind(':description', $description);
-        $db->bind(':table', $table);
-        $db->bind(':record_id', $recordId);
-        $db->bind(':created_at', date(DATETIME_FORMAT));
-        
-        $db->execute();
+        try {
+            $db = Database::getInstance();
+            $query = "INSERT INTO activity_logs (user_id, action, description, table_name, record_id, created_at) 
+                      VALUES (:user_id, :action, :description, :table, :record_id, :created_at)";
+            
+            $db->prepare($query);
+            $db->bind(':user_id', $this->user['id']);
+            $db->bind(':action', $action);
+            $db->bind(':description', $description);
+            $db->bind(':table', $table);
+            $db->bind(':record_id', $recordId);
+            $db->bind(':created_at', date(DATETIME_FORMAT));
+            
+            $db->execute();
+        } catch (\Exception $e) {
+            // activity_logs table may not exist — silently skip
+        }
     }
 
     /**

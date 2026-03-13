@@ -10,6 +10,10 @@
 
     <link href="<?= APP_URL ?>/assets/css/style.css" rel="stylesheet">
     <style>
+        :root {
+            --app-footer-bg: #0f172a;
+            --app-footer-text: #cbd5e1;
+        }
         /* duplicate sidebar/top-header css from previous design */
         .sidebar {
             position: fixed;
@@ -119,7 +123,7 @@
             margin-left: 70px;
         }
         .top-header {
-            height: 60px;
+            height: 72px;
             background-color: #fff;
             border-bottom: 1px solid #dee2e6;
             position: fixed;
@@ -137,10 +141,32 @@
             height: 100%;
         }
         .content-wrapper {
-            padding-top: 80px;
+            display: flex;
+            flex-direction: column;
+            padding-top: 92px;
             padding-left: 20px;
             padding-right: 20px;
-            min-height: calc(100vh - 60px);
+            min-height: calc(100vh - 72px);
+        }
+        .app-page-content {
+            flex: 1 0 auto;
+        }
+        .app-site-footer {
+            margin-top: auto;
+            margin-left: -20px;
+            margin-right: -20px;
+            padding: 28px 28px 18px;
+            background: linear-gradient(135deg, var(--app-footer-bg) 0%, #16213d 100%);
+            color: var(--app-footer-text);
+            border-top: 1px solid rgba(148, 163, 184, 0.18);
+            box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.12);
+        }
+        .app-site-footer a {
+            color: var(--app-footer-text);
+            text-decoration: none;
+        }
+        .app-site-footer a:hover {
+            color: #ffffff;
         }
         .sidebar-toggle {
             background: none;
@@ -149,6 +175,24 @@
             font-size: 1.2rem;
             padding: 10px;
             cursor: pointer;
+        }
+        .user-avatar {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #dee2e6;
+        }
+        .user-avatar-fallback {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #dee2e6;
+            color: #6c757d;
+            background: #f8f9fa;
         }
         @media (max-width: 768px) {
             .sidebar {
@@ -176,6 +220,11 @@
             .sidebar-overlay.show {
                 display: block;
             }
+            .app-site-footer {
+                margin-left: -20px;
+                margin-right: -20px;
+                padding: 24px 20px 18px;
+            }
         }
     </style>
 </head>
@@ -195,36 +244,187 @@
                     <span>Dashboard</span>
                 </a>
             </li>
-            <!-- Add additional menu items here, use hasPermission via controller -->
-            <?php if ($controller->hasPermission(['Sales', 'Technician', 'Accountant', 'Super Admin'])): ?>
-            <li>
-                <a href="<?= APP_URL ?>/income.php">
-                    <i class="fas fa-money-bill-wave"></i>
-                    <span>Income</span>
+            <li class="dropdown">
+                <a href="#" class="dropdown-toggle <?= in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#announcementsSubmenu">
+                    <i class="fas fa-bullhorn"></i>
+                    <span>Announcements</span>
+                    <i class="fas fa-chevron-down float-end"></i>
                 </a>
+                <ul class="collapse list-unstyled ps-3" id="announcementsSubmenu">
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/announcements_latest.php" class="<?= basename($_SERVER['PHP_SELF']) == 'announcements_latest.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-list"></i>
+                            <span>Latest Announcements</span>
+                        </a>
+                    </li>
+                    <?php if ($controller->hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin'])): ?>
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/announcements_send.php" class="<?= basename($_SERVER['PHP_SELF']) == 'announcements_send.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-paper-plane"></i>
+                            <span>Send Announcement</span>
+                        </a>
+                    </li>
+                    <?php endif; ?>
+                    <?php if ($controller->hasPermission(['Super Admin'])): ?>
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/announcements_inactive.php" class="<?= basename($_SERVER['PHP_SELF']) == 'announcements_inactive.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-archive"></i>
+                            <span>Inactive Announcements</span>
+                        </a>
+                    </li>
+                    <?php endif; ?>
+                </ul>
+            </li>
+            <?php if ($controller->hasPermission(['Sales', 'Accountant', 'Super Admin'])): ?>
+            <li class="dropdown">
+                <a href="#" class="dropdown-toggle <?= in_array(basename($_SERVER['PHP_SELF']), ['add_income.php', 'view_income.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#incomeSubmenu">
+                    <i class="fas fa-dollar-sign"></i>
+                    <span>Income</span>
+                    <i class="fas fa-chevron-down float-end"></i>
+                </a>
+                <ul class="collapse list-unstyled ps-3" id="incomeSubmenu">
+                    <?php if ($controller->hasPermission(['Sales', 'Super Admin'])): ?>
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/add_income.php" class="<?= basename($_SERVER['PHP_SELF']) == 'add_income.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-plus"></i>
+                            <span>Add Income</span>
+                        </a>
+                    </li>
+                    <?php endif; ?>
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/view_income.php" class="<?= basename($_SERVER['PHP_SELF']) == 'view_income.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-list"></i>
+                            <span>View Income</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/snippe_sync_history.php" class="<?= basename($_SERVER['PHP_SELF']) == 'snippe_sync_history.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-history"></i>
+                            <span>Snippe Sync History</span>
+                        </a>
+                    </li>
+                </ul>
+            </li>
+            <?php endif; ?>
+            <?php if ($controller->hasPermission(['Sales', 'Technician', 'Manager', 'Director', 'Accountant', 'Super Admin'])): ?>
+            <li class="dropdown">
+                <a href="#" class="dropdown-toggle <?= in_array(basename($_SERVER['PHP_SELF']), ['add_expense_request.php', 'view_expense_requests.php', 'expenses.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#expensesSubmenu">
+                    <i class="fas fa-receipt"></i>
+                    <span>Expenses</span>
+                    <i class="fas fa-chevron-down float-end"></i>
+                </a>
+                <ul class="collapse list-unstyled ps-3" id="expensesSubmenu">
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/add_expense_request.php" class="<?= basename($_SERVER['PHP_SELF']) == 'add_expense_request.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-plus"></i>
+                            <span>Add Request</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/view_expense_requests.php" class="<?= in_array(basename($_SERVER['PHP_SELF']), ['view_expense_requests.php', 'expenses.php']) ? 'active' : ''; ?>">
+                            <i class="fas fa-list"></i>
+                            <span>View Requests</span>
+                        </a>
+                    </li>
+                </ul>
+            </li>
+            <?php endif; ?>
+            <?php if ($controller->hasPermission(['Manager', 'Store Keeper', 'Super Admin', 'Technician', 'Sales', 'Director', 'Accountant'])): ?>
+            <li class="dropdown">
+                <a href="#" class="dropdown-toggle <?= in_array(basename($_SERVER['PHP_SELF']), ['inventory.php', 'add_inventory.php', 'inventory_items.php', 'issue_equipment.php', 'low_stock_alerts.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#inventorySubmenu">
+                    <i class="fas fa-boxes"></i>
+                    <span>Inventory</span>
+                    <i class="fas fa-chevron-down float-end"></i>
+                </a>
+                <ul class="collapse list-unstyled ps-3" id="inventorySubmenu">
+                    <?php if ($controller->hasPermission(['Store Keeper'])): ?>
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/add_inventory.php">
+                            <i class="fas fa-plus"></i>
+                            <span>Add Inventory Item</span>
+                        </a>
+                    </li>
+                    <?php endif; ?>
+                    <?php if ($controller->hasPermission(['Store Keeper', 'Manager', 'Super Admin', 'Technician'])): ?>
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/inventory_items.php">
+                            <i class="fas fa-list"></i>
+                            <span>Inventory Items</span>
+                        </a>
+                    </li>
+                    <?php endif; ?>
+                    <?php if ($controller->hasPermission(['Store Keeper', 'Manager', 'Super Admin', 'Sales', 'Technician'])): ?>
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/issue_equipment.php">
+                            <i class="fas fa-tools"></i>
+                            <span>Equipment Requests</span>
+                        </a>
+                    </li>
+                    <?php endif; ?>
+                    <?php if ($controller->hasPermission(['Store Keeper', 'Manager', 'Super Admin'])): ?>
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/low_stock_alerts.php">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <span>Low Stock Alerts</span>
+                        </a>
+                    </li>
+                    <?php endif; ?>
+                </ul>
+            </li>
+            <?php endif; ?>
+            <?php if ($controller->hasPermission(['Technician', 'Sales', 'Manager', 'Director', 'Accountant', 'Super Admin'])): ?>
+            <li class="dropdown">
+                <a href="#" class="dropdown-toggle <?= in_array(basename($_SERVER['PHP_SELF']), ['stations.php', 'request_new_station_setup.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#stationsSubmenu">
+                    <i class="fas fa-broadcast-tower"></i>
+                    <span>Stations</span>
+                    <i class="fas fa-chevron-down float-end"></i>
+                </a>
+                <ul class="collapse list-unstyled ps-3" id="stationsSubmenu">
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/stations.php#station-setup-requests">
+                            <i class="fas fa-list"></i>
+                            <span>Station Setup Requests</span>
+                        </a>
+                    </li>
+                    <?php if ($controller->hasPermission(['Technician'])): ?>
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/request_new_station_setup.php">
+                            <i class="fas fa-plus"></i>
+                            <span>Request New Station Setup</span>
+                        </a>
+                    </li>
+                    <?php endif; ?>
+                </ul>
+            </li>
+            <?php endif; ?>
+            <?php if ($controller->hasPermission(['Super Admin'])): ?>
+            <li class="dropdown">
+                <a href="#" class="dropdown-toggle" data-bs-toggle="collapse" data-bs-target="#usersSubmenu">
+                    <i class="fas fa-users"></i>
+                    <span>Users</span>
+                    <i class="fas fa-chevron-down float-end"></i>
+                </a>
+                <ul class="collapse list-unstyled ps-3" id="usersSubmenu">
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/users.php#users-list">
+                            <i class="fas fa-list"></i>
+                            <span>List of Users</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="<?= APP_URL ?>/pages/add_user.php">
+                            <i class="fas fa-user-plus"></i>
+                            <span>Add User</span>
+                        </a>
+                    </li>
+                </ul>
             </li>
             <?php endif; ?>
             <?php if ($controller->hasPermission(['Manager', 'Director', 'Accountant', 'Super Admin'])): ?>
             <li>
-                <a href="<?= APP_URL ?>/expenses.php">
-                    <i class="fas fa-receipt"></i>
-                    <span>Expenses</span>
-                </a>
-            </li>
-            <?php endif; ?>
-            <?php if ($controller->hasPermission(['Manager', 'Store Keeper', 'Super Admin'])): ?>
-            <li>
-                <a href="<?= APP_URL ?>/inventory.php">
-                    <i class="fas fa-boxes"></i>
-                    <span>Inventory</span>
-                </a>
-            </li>
-            <?php endif; ?>
-            <?php if ($controller->hasPermission(['Technician', 'Manager', 'Super Admin'])): ?>
-            <li>
-                <a href="<?= APP_URL ?>/stations.php">
-                    <i class="fas fa-wifi"></i>
-                    <span>Stations</span>
+                <a href="<?= APP_URL ?>/pages/reports.php" class="<?= basename($_SERVER['PHP_SELF']) == 'reports.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-chart-bar"></i>
+                    <span>Reports</span>
                 </a>
             </li>
             <?php endif; ?>
@@ -242,18 +442,74 @@
     <div class="main-content">
         <!-- Top header/nav -->
         <header class="top-header">
-            <nav class="navbar">
-                <button id="sidebarToggle" class="sidebar-toggle"><i class="fas fa-bars"></i></button>
-                <div class="ms-auto">
-                    <span class="me-3">Welcome, <?= htmlspecialchars($user['full_name'] ?? ''); ?></span>
-                    <a href="<?= APP_URL ?>/profile.php" class="me-3"><i class="fas fa-user"></i></a>
-                    <a href="<?= APP_URL ?>/logout.php"><i class="fas fa-sign-out-alt"></i></a>
+            <nav class="navbar navbar-expand-lg navbar-light">
+                <div class="container-fluid d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <button class="sidebar-toggle d-lg-none" id="sidebarToggle">
+                            <i class="fas fa-bars"></i>
+                        </button>
+                        <button class="sidebar-toggle d-none d-lg-block" id="sidebarCollapse">
+                            <i class="fas fa-bars"></i>
+                        </button>
+                    </div>
+
+                    <div class="d-flex align-items-center">
+                        <?php $profilePhoto = $user['profile_photo'] ?? ''; ?>
+                        <div class="me-3">
+                            <?php if (!empty($profilePhoto)): ?>
+                                <img src="<?= APP_URL ?>/uploads/<?= htmlspecialchars($profilePhoto); ?>" class="user-avatar" alt="User Photo" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
+                                <span class="user-avatar-fallback" style="display:none;"><i class="fas fa-user"></i></span>
+                            <?php else: ?>
+                                <span class="user-avatar-fallback"><i class="fas fa-user"></i></span>
+                            <?php endif; ?>
+                        </div>
+                        <span class="me-3 text-muted">
+                            Welcome, <strong><?= htmlspecialchars($user['full_name'] ?? ($user['username'] ?? 'User')); ?></strong>
+                            <span class="badge bg-primary ms-2"><?= htmlspecialchars($user['role'] ?? 'Unknown Role'); ?></span>
+                        </span>
+
+                        <div class="dropdown">
+                            <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown">
+                                <i class="fas fa-user"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="<?= APP_URL ?>/pages/profile.php"><i class="fas fa-user-edit"></i> Profile</a></li>
+                                <li><a class="dropdown-item" href="<?= APP_URL ?>/change_password.php"><i class="fas fa-key"></i> Change Password</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="<?= APP_URL ?>/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             </nav>
         </header>
 
         <div class="content-wrapper">
-            <?= $content ?>
+            <div class="app-page-content">
+                <?= $content ?>
+            </div>
+            <footer class="app-site-footer">
+                <div class="row g-4 align-items-center mx-0">
+                    <div class="col-lg-5 px-0">
+                        <h5 class="text-white mb-2">JASSNET Business Management System</h5>
+                        <p class="mb-0 small">Operations, approvals, payouts, inventory, stations, and announcements managed in one workspace.</p>
+                    </div>
+                    <div class="col-lg-4 px-0">
+                        <div class="small text-uppercase fw-semibold mb-2" style="letter-spacing: 0.08em; color: #93c5fd;">Quick Access</div>
+                        <div class="d-flex flex-wrap gap-3 small">
+                            <a href="<?= APP_URL ?>/dashboard.php">Dashboard</a>
+                            <a href="<?= APP_URL ?>/pages/view_income.php">Income</a>
+                            <a href="<?= APP_URL ?>/pages/view_expense_requests.php">Expenses</a>
+                            <a href="<?= APP_URL ?>/pages/stations.php">Stations</a>
+                        </div>
+                    </div>
+                    <div class="col-lg-3 px-0 text-lg-end">
+                        <div class="small text-uppercase fw-semibold mb-2" style="letter-spacing: 0.08em; color: #93c5fd;">Copyright</div>
+                        <div class="small">&copy; <?= date('Y') ?> JASSNET Incame. All rights reserved.</div>
+                        <div class="small">Built for internal business operations.</div>
+                    </div>
+                </div>
+            </footer>
         </div>
     </div>
 
@@ -264,6 +520,7 @@
             const sidebar = document.getElementById('sidebar');
             const sidebarOverlay = document.getElementById('sidebarOverlay');
             const sidebarToggle = document.getElementById('sidebarToggle');
+            const sidebarCollapse = document.getElementById('sidebarCollapse');
 
             if (sidebarToggle) {
                 sidebarToggle.addEventListener('click', function() {
@@ -272,9 +529,70 @@
                 });
             }
 
-            sidebarOverlay && sidebarOverlay.addEventListener('click', function() {
-                sidebar.classList.remove('show');
-                sidebarOverlay.classList.remove('show');
+            if (sidebarCollapse) {
+                sidebarCollapse.addEventListener('click', function() {
+                    sidebar.classList.toggle('collapsed');
+                });
+            }
+
+            if (sidebarOverlay) {
+                sidebarOverlay.addEventListener('click', function() {
+                    sidebar.classList.remove('show');
+                    sidebarOverlay.classList.remove('show');
+                });
+            }
+
+            const menuLinks = sidebar.querySelectorAll('.menu a');
+            menuLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth < 992) {
+                        sidebar.classList.remove('show');
+                        sidebarOverlay.classList.remove('show');
+                    }
+                });
+            });
+
+            window.addEventListener('resize', function() {
+                if (window.innerWidth >= 992) {
+                    sidebar.classList.remove('show');
+                    sidebarOverlay.classList.remove('show');
+                }
+            });
+
+            const dropdownToggles = sidebar.querySelectorAll('.dropdown-toggle');
+            dropdownToggles.forEach(toggle => {
+                toggle.addEventListener('click', function(e) {
+                    e.preventDefault();
+
+                    dropdownToggles.forEach(otherToggle => {
+                        if (otherToggle !== toggle) {
+                            const otherTarget = document.querySelector(otherToggle.getAttribute('data-bs-target'));
+                            if (otherTarget) {
+                                otherTarget.classList.remove('show');
+                                otherToggle.setAttribute('aria-expanded', 'false');
+                            }
+                        }
+                    });
+
+                    const target = document.querySelector(this.getAttribute('data-bs-target'));
+                    if (target) {
+                        const isExpanded = this.getAttribute('aria-expanded') === 'true';
+                        this.setAttribute('aria-expanded', !isExpanded);
+                        target.classList.toggle('show');
+                    }
+                });
+            });
+
+            document.addEventListener('click', function(e) {
+                if (!sidebar.contains(e.target)) {
+                    dropdownToggles.forEach(toggle => {
+                        const target = document.querySelector(toggle.getAttribute('data-bs-target'));
+                        if (target) {
+                            target.classList.remove('show');
+                            toggle.setAttribute('aria-expanded', 'false');
+                        }
+                    });
+                }
             });
         });
     </script>

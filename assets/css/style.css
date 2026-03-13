@@ -198,6 +198,29 @@ textarea.form-control {
     background-color: #fafbfc;
 }
 
+.table-pagination-toolbar {
+    background: #f8fafc;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+}
+
+.table-pagination-label {
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.table-pagination-buttons .btn.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: #fff;
+    opacity: 1;
+}
+
+.table-pagination-buttons .btn:disabled {
+    opacity: 0.7;
+}
+
 /* Alerts */
 .alert {
     border: none;

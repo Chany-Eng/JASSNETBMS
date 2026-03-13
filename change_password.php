@@ -79,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         <?php endif; ?>
                         
                         <?php if ($message): ?>
-                            <div class="alert alert-success"><?php echo $message; ?></div>
+                            <div class="alert alert-success"><?php echo htmlspecialchars(formatSuccessMessage($message, $user)); ?></div>
                         <?php endif; ?>
                         
                         <?php if ($error): ?>

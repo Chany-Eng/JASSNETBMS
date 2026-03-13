@@ -114,7 +114,7 @@ class StationRequest extends BaseModel
      */
     public function getTotalEstimatedCost()
     {
-        $this->db->prepare("SELECT SUM(estimated_cost) as total FROM $this->table WHERE status != :status");
+        $this->db->prepare("SELECT SUM(total_estimated_cost) as total FROM $this->table WHERE status != :status");
         $this->db->bind(':status', STATION_STATUS_COMPLETED);
         
         $result = $this->db->fetch();

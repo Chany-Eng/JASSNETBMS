@@ -15,12 +15,12 @@ class Inventory extends BaseModel
         'item_name',
         'category',
         'quantity',
-        'minimum_quantity',
-        'unit_price',
-        'description',
+        'purchase_price',
+        'selling_price',
         'supplier',
-        'date_added',
-        'added_by',
+        'purchase_date',
+        'status',
+        'notes',
     ];
     protected $timestamps = true;
 
@@ -31,7 +31,10 @@ class Inventory extends BaseModel
      */
     public function getLowStock()
     {
-        $this->db->prepare("SELECT * FROM $this->table WHERE quantity < minimum_quantity ORDER BY quantity ASC");
+        // `minimum_quantity` is not present in the current schema.
+        // Use a practical low-stock threshold to avoid SQL errors.
+        $this->db->prepare("SELECT * FROM $this->table WHERE quantity <= :threshold ORDER BY quantity ASC");
+        $this->db->bind(':threshold', 5);
         return $this->db->fetchAll();
     }
 
@@ -76,7 +79,7 @@ class Inventory extends BaseModel
      */
     public function getTotalValue()
     {
-        $this->db->prepare("SELECT SUM(quantity * unit_price) as total FROM $this->table");
+        $this->db->prepare("SELECT SUM(quantity * purchase_price) as total FROM $this->table");
         $result = $this->db->fetch();
         return $result['total'] ?? 0;
     }
@@ -139,7 +142,8 @@ class Inventory extends BaseModel
      */
     public function getReorderNeeded()
     {
-        $this->db->prepare("SELECT * FROM $this->table WHERE quantity <= minimum_quantity ORDER BY quantity ASC");
+        $this->db->prepare("SELECT * FROM $this->table WHERE quantity <= :threshold ORDER BY quantity ASC");
+        $this->db->bind(':threshold', 5);
         return $this->db->fetchAll();
     }
 
@@ -157,7 +161,8 @@ class Inventory extends BaseModel
         $stats['total_items'] = $this->db->fetch()['count'] ?? 0;
 
         // Low stock items
-        $this->db->prepare("SELECT COUNT(*) as count FROM $this->table WHERE quantity < minimum_quantity");
+        $this->db->prepare("SELECT COUNT(*) as count FROM $this->table WHERE quantity <= :threshold");
+        $this->db->bind(':threshold', 5);
         $stats['low_stock_items'] = $this->db->fetch()['count'] ?? 0;
 
         // Total value

@@ -14,9 +14,9 @@ class AuthController extends BaseController
 
     public function __construct()
     {
-        // Public methods - don't require login
-        parent::__construct();
+        // Initialize model before parent so getCurrentUser() can use it
         $this->userModel = new User();
+        parent::__construct();
     }
 
     /**
@@ -99,8 +99,12 @@ class AuthController extends BaseController
             setcookie('remember_token', $token, $expiry, '/', '', false, true);
             setcookie('user_id', $user['id'], $expiry, '/', '', false, true);
 
-            // Save token to database (optional)
-            $this->userModel->update($user['id'], ['remember_token' => $token]);
+            // Save token to database (optional — column may not exist)
+            try {
+                $this->userModel->update($user['id'], ['remember_token' => $token]);
+            } catch (\Exception $e) {
+                // Silently skip if remember_token column doesn't exist
+            }
         }
 
         // Update last login
@@ -215,7 +219,7 @@ class AuthController extends BaseController
      * @param string $password
      * @return bool|array True if valid, array of errors if not
      */
-    private function validatePassword($password)
+    protected function validatePassword($password)
     {
         $errors = [];
 
