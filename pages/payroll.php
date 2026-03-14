@@ -37,16 +37,47 @@ function payrollBuildRecord(array $row): array
     return $row;
 }
 
-function payrollFetchTargetUser(mysqli $conn, int $userId): ?array
+function payrollFetchWorkflowRequest(mysqli $conn, int $requestId): ?array
 {
-    $stmt = $conn->prepare('SELECT id, full_name, employee_id, id_number, phone, payout_phone, bank_name, bank_account_number, preferred_payout_channel FROM users WHERE id = ? LIMIT 1');
+    $stmt = $conn->prepare('SELECT sr.*, u.full_name AS employee_name, u.phone, u.employee_id FROM salary_requests sr JOIN users u ON sr.user_id = u.id WHERE sr.id = ? LIMIT 1');
     if (!$stmt) {
         return null;
     }
 
-    $stmt->bind_param('i', $userId);
+    $stmt->bind_param('i', $requestId);
     $stmt->execute();
     return $stmt->get_result()->fetch_assoc() ?: null;
+}
+
+function payrollNotifyStage(mysqli $conn, array $row, string $stage, string $comment = ''): void
+{
+    $requestId = (int) ($row['id'] ?? 0);
+    $employeeName = trim((string) ($row['employee_name'] ?? 'Employee'));
+    $salaryMonth = (string) ($row['salary_month'] ?? date('Y-m-01'));
+    $monthLabel = date('F Y', strtotime($salaryMonth));
+    $netSalary = number_format((float) ($row['net_salary'] ?? 0), 2);
+    $phone = (string) ($row['phone'] ?? '');
+
+    if ($stage === 'manager_approved') {
+        appSendSmsToPhone($phone, 'ERMS: Salary request #' . $requestId . ' ya ' . $monthLabel . ' imekubaliwa na Manager. Inasubiri Director approval.');
+        appSendSmsToRoles($conn, ['Director'], 'ERMS: Salary request #' . $requestId . ' kwa ' . $employeeName . ' inasubiri Director approval yako.');
+        return;
+    }
+
+    if ($stage === 'director_approved') {
+        appSendSmsToPhone($phone, 'ERMS: Salary request #' . $requestId . ' ya ' . $monthLabel . ' imekubaliwa na Director. Inasubiri final accountant approval.');
+        appSendSmsToRoles($conn, ['Accountant'], 'ERMS: Salary request #' . $requestId . ' kwa ' . $employeeName . ' inasubiri final processing yako.');
+        return;
+    }
+
+    if ($stage === 'finalized') {
+        appSendSmsToPhone($phone, 'ERMS: Salary request #' . $requestId . ' ya ' . $monthLabel . ' imelipwa. Net salary: Tshs. ' . $netSalary . '.' . ($comment !== '' ? ' Ref: ' . $comment : ''));
+        return;
+    }
+
+    if ($stage === 'rejected') {
+        appSendSmsToPhone($phone, 'ERMS: Salary request #' . $requestId . ' ya ' . $monthLabel . ' imekataliwa. Sababu: ' . ($comment !== '' ? $comment : '-'));
+    }
 }
 
 function payrollUserCanAccess(array $row, bool $isPrivileged): bool
@@ -59,49 +90,7 @@ function payrollUserCanAccess(array $row, bool $isPrivileged): bool
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['create_salary_request'])) {
-        if (!$canCreatePayroll) {
-            $error = 'You are not allowed to create salary requests';
-        } else {
-            $userId = intval($_POST['user_id'] ?? 0);
-            $salaryMonthInput = trim((string) ($_POST['salary_month'] ?? ''));
-            $salaryMonth = $salaryMonthInput !== '' ? $salaryMonthInput . '-01' : '';
-            $basicSalary = (float) ($_POST['basic_salary'] ?? 0);
-            $bonusAmount = (float) ($_POST['bonus_amount'] ?? 0);
-            $deductionAmount = (float) ($_POST['deduction_amount'] ?? 0);
-            $requestComment = sanitize($_POST['request_comment'] ?? '');
-            $netSalary = $basicSalary + $bonusAmount - $deductionAmount;
-            $targetUser = payrollFetchTargetUser($conn, $userId);
-
-            if (!$targetUser) {
-                $error = 'Selected user was not found';
-            } elseif ($salaryMonth === '') {
-                $error = 'Salary month is required';
-            } elseif ($netSalary <= 0) {
-                $error = 'Net salary must be greater than zero';
-            } else {
-                $payoutChannel = strtolower(trim((string) ($targetUser['preferred_payout_channel'] ?? 'mobile')));
-                $payoutChannel = $payoutChannel === 'bank' ? 'bank' : 'mobile';
-                $payoutDestination = payrollResolvePayoutDestination($targetUser);
-
-                if ($payoutDestination === '') {
-                    $error = 'Selected user does not have payout details saved';
-                } else {
-                    $stmt = $conn->prepare('INSERT INTO salary_requests (user_id, salary_month, basic_salary, bonus_amount, deduction_amount, net_salary, payout_channel, payout_destination, request_comment, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                    if ($stmt) {
-                        $stmt->bind_param('isddddsssi', $userId, $salaryMonth, $basicSalary, $bonusAmount, $deductionAmount, $netSalary, $payoutChannel, $payoutDestination, $requestComment, $_SESSION['user_id']);
-                        if ($stmt->execute()) {
-                            appLogActivity($conn, 'CREATE_SALARY_REQUEST', 'Created salary request for ' . ($targetUser['full_name'] ?? ('user #' . $userId)), 'salary_requests', (int) $stmt->insert_id);
-                            $_SESSION['success_message'] = 'Salary request created successfully';
-                            header('Location: payroll.php');
-                            exit();
-                        }
-                    }
-                    $error = 'Failed to create salary request';
-                }
-            }
-        }
-    } elseif (isset($_POST['approve_manager_salary'])) {
+    if (isset($_POST['approve_manager_salary'])) {
         if (!$canManagerApprovePayroll) {
             $error = 'You are not allowed to approve as manager';
         } else {
@@ -115,6 +104,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt->bind_param('sii', $comment, $_SESSION['user_id'], $requestId);
                     $stmt->execute();
                     appLogActivity($conn, 'APPROVE_SALARY_MANAGER', 'Manager approved salary request #' . $requestId, 'salary_requests', $requestId);
+                    $salaryRow = payrollFetchWorkflowRequest($conn, $requestId);
+                    if ($salaryRow) {
+                        payrollNotifyStage($conn, $salaryRow, 'manager_approved', $comment);
+                    }
                     $_SESSION['success_message'] = 'Salary request approved by manager';
                     header('Location: payroll.php');
                     exit();
@@ -135,6 +128,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt->bind_param('sii', $comment, $_SESSION['user_id'], $requestId);
                     $stmt->execute();
                     appLogActivity($conn, 'APPROVE_SALARY_DIRECTOR', 'Director approved salary request #' . $requestId, 'salary_requests', $requestId);
+                    $salaryRow = payrollFetchWorkflowRequest($conn, $requestId);
+                    if ($salaryRow) {
+                        payrollNotifyStage($conn, $salaryRow, 'director_approved', $comment);
+                    }
                     $_SESSION['success_message'] = 'Salary request approved by director';
                     header('Location: payroll.php');
                     exit();
@@ -165,16 +162,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = 'Salary request not found or is no longer waiting for final approval';
                 } else {
                     try {
-                        $payoutResult = payrollSendSalaryPayout($salaryRow, $salaryRow);
-                        if ($paymentReference === '') {
-                            $paymentReference = (string) ($payoutResult['reference'] ?? '');
+                        $selectedPayoutChannel = strtolower(trim((string) ($salaryRow['payout_channel'] ?? 'mobile')));
+                        $successMessage = 'Salary payment sent successfully to user payout destination';
+                        if ($selectedPayoutChannel === 'cash') {
+                            if ($paymentReference === '') {
+                                $paymentReference = 'CASH-' . date('YmdHis');
+                            }
+                            $successMessage = 'Cash salary payment recorded successfully';
+                        } else {
+                            $payoutResult = payrollSendSalaryPayout($salaryRow, $salaryRow);
+                            if ($paymentReference === '') {
+                                $paymentReference = (string) ($payoutResult['reference'] ?? '');
+                            }
                         }
                         $stmt = $conn->prepare("UPDATE salary_requests SET accountant_final_comment = ?, payment_reference = ?, finalized_by = ?, finalized_at = NOW(), status = 'Paid' WHERE id = ? AND status = 'Pending Accountant Final Approval'");
                         if ($stmt) {
                             $stmt->bind_param('ssii', $comment, $paymentReference, $_SESSION['user_id'], $requestId);
                             $stmt->execute();
-                            appLogActivity($conn, 'FINALIZE_SALARY_PAYMENT', 'Finalized salary payment #' . $requestId . ' via Snippe payout reference ' . $paymentReference, 'salary_requests', $requestId);
-                            $_SESSION['success_message'] = 'Salary payment sent successfully to user payout destination';
+                            appLogActivity($conn, 'FINALIZE_SALARY_PAYMENT', 'Finalized salary payment #' . $requestId . ' via ' . payrollPayoutLabel($selectedPayoutChannel) . ' reference ' . $paymentReference, 'salary_requests', $requestId);
+                            $salaryRow = payrollFetchWorkflowRequest($conn, $requestId);
+                            if ($salaryRow) {
+                                $salaryRow['net_salary'] = $salaryRow['net_salary'] ?? ($salaryRow['net_salary'] ?? 0);
+                                payrollNotifyStage($conn, $salaryRow, 'finalized', $paymentReference);
+                            }
+                            $_SESSION['success_message'] = $successMessage;
                             header('Location: payroll.php');
                             exit();
                         }
@@ -198,6 +209,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt->bind_param('sii', $comment, $_SESSION['user_id'], $requestId);
                     $stmt->execute();
                     appLogActivity($conn, 'REJECT_SALARY_REQUEST', 'Rejected salary request #' . $requestId, 'salary_requests', $requestId);
+                    $salaryRow = payrollFetchWorkflowRequest($conn, $requestId);
+                    if ($salaryRow) {
+                        payrollNotifyStage($conn, $salaryRow, 'rejected', $comment);
+                    }
                     $_SESSION['success_message'] = 'Salary request rejected';
                     header('Location: payroll.php');
                     exit();
@@ -282,37 +297,34 @@ if (isset($_GET['export']) && $_GET['export'] === 'pdf') {
     $error = 'Payslip not found';
 }
 
-$userOptions = $conn->query("SELECT id, full_name, employee_id, preferred_payout_channel, payout_phone, bank_account_number, bank_name FROM users WHERE COALESCE(is_active, 1) = 1 ORDER BY full_name ASC");
-
 include '../includes/header.php';
 ?>
 
 <div class="container-fluid py-4">
-    <div class="row mb-4">
-        <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <div>
-                <h2 class="mb-1"><i class="fas fa-money-check-dollar"></i> Payroll</h2>
-                <div class="text-muted small">Salary requests, approvals, final accountant confirmation, and payslip downloads.</div>
-            </div>
-            <?php if ($canExportPayroll): ?>
-                <div class="d-flex gap-2 flex-wrap">
-                    <a href="payroll.php?export=excel" class="btn btn-outline-success">
-                        <i class="fas fa-file-excel"></i> Export Excel
-                    </a>
-                    <a href="payroll.php?export=batch-pdf" class="btn btn-outline-danger">
-                        <i class="fas fa-file-pdf"></i> Export PDF
-                    </a>
-                </div>
-            <?php endif; ?>
-        </div>
-    </div>
-
-    <div class="row g-3 mb-4">
-        <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">Total Requests</div><h4 class="mb-0"><?php echo $salarySummary['total']; ?></h4></div></div></div>
-        <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">Pending</div><h4 class="mb-0 text-warning"><?php echo $salarySummary['pending']; ?></h4></div></div></div>
-        <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">Paid</div><h4 class="mb-0 text-success"><?php echo $salarySummary['paid']; ?></h4></div></div></div>
-        <div class="col-md-3"><div class="card"><div class="card-body"><div class="text-muted small">Rejected</div><h4 class="mb-0 text-danger"><?php echo $salarySummary['rejected']; ?></h4></div></div></div>
-    </div>
+    <?php
+    $payrollHeroActions = [];
+    if ($canCreatePayroll) {
+        $payrollHeroActions[] = '<a href="create_salary_request.php" class="btn btn-light"><i class="fas fa-plus-circle"></i> Create Salary Request</a>';
+    }
+    if ($canExportPayroll) {
+        $payrollHeroActions[] = '<a href="payroll.php?export=excel" class="btn btn-outline-light"><i class="fas fa-file-excel"></i> Export Excel</a>';
+        $payrollHeroActions[] = '<a href="payroll.php?export=batch-pdf" class="btn btn-outline-light"><i class="fas fa-file-pdf"></i> Export PDF</a>';
+    }
+    echo renderPageHero([
+        'eyebrow' => 'Payroll Control',
+        'title' => 'Salary Requests',
+        'icon' => 'fa-money-check-dollar',
+        'subtitle' => 'Track salary approvals, final accountant confirmation, cash or digital payouts, and payslip downloads.',
+        'badges' => ['Multi-stage approvals', 'Excel export', 'Payslip PDF'],
+        'actions' => $payrollHeroActions,
+        'stats' => [
+            ['label' => 'Total Requests', 'value' => (string) $salarySummary['total'], 'hint' => 'All salary workflow entries'],
+            ['label' => 'Pending', 'value' => (string) $salarySummary['pending'], 'hint' => 'Awaiting action', 'tone' => 'warning'],
+            ['label' => 'Paid', 'value' => (string) $salarySummary['paid'], 'hint' => 'Finalized payouts', 'tone' => 'success'],
+            ['label' => 'Rejected', 'value' => (string) $salarySummary['rejected'], 'hint' => 'Closed without payout', 'tone' => 'danger'],
+        ],
+    ]);
+    ?>
 
     <?php if ($success_message): ?>
         <div class="alert alert-success"><?php echo htmlspecialchars(formatSuccessMessage($success_message)); ?></div>
@@ -324,77 +336,13 @@ include '../includes/header.php';
         <div class="alert alert-danger"><?php echo htmlspecialchars($error); ?></div>
     <?php endif; ?>
 
-    <?php if ($canCreatePayroll): ?>
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header"><h5 class="mb-0"><i class="fas fa-plus-circle"></i> Create Salary Request</h5></div>
-                <div class="card-body">
-                    <form method="POST" class="row g-3" id="createSalaryRequestForm">
-                        <div class="col-md-4">
-                            <label for="salary_user_id" class="form-label">User *</label>
-                            <select class="form-select" id="salary_user_id" name="user_id" required>
-                                <option value="">Select user</option>
-                                <?php if ($userOptions): ?>
-                                    <?php while ($user = $userOptions->fetch_assoc()): ?>
-                                        <?php $channel = strtolower((string) ($user['preferred_payout_channel'] ?? 'mobile')) === 'bank' ? 'bank' : 'mobile'; ?>
-                                        <?php $destination = $channel === 'bank' ? trim((string) (($user['bank_name'] ?? '') . ' ' . ($user['bank_account_number'] ?? ''))) : trim((string) (($user['payout_phone'] ?? '') !== '' ? $user['payout_phone'] : '')); ?>
-                                        <option value="<?php echo (int) $user['id']; ?>" data-channel="<?php echo htmlspecialchars($channel); ?>" data-destination="<?php echo htmlspecialchars($destination); ?>">
-                                            <?php echo htmlspecialchars(($user['full_name'] ?? 'User') . ' - ' . (($user['employee_id'] ?? '') ?: 'No employee ID')); ?>
-                                        </option>
-                                    <?php endwhile; ?>
-                                <?php endif; ?>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <label for="salary_month" class="form-label">Salary Month *</label>
-                            <input type="month" class="form-control" id="salary_month" name="salary_month" value="<?php echo date('Y-m'); ?>" required>
-                        </div>
-                        <div class="col-md-2">
-                            <label for="basic_salary" class="form-label">Basic Salary *</label>
-                            <input type="number" class="form-control payroll-calc" id="basic_salary" name="basic_salary" step="0.01" min="0" required>
-                        </div>
-                        <div class="col-md-2">
-                            <label for="bonus_amount" class="form-label">Bonus</label>
-                            <input type="number" class="form-control payroll-calc" id="bonus_amount" name="bonus_amount" step="0.01" min="0" value="0">
-                        </div>
-                        <div class="col-md-2">
-                            <label for="deduction_amount" class="form-label">Deductions</label>
-                            <input type="number" class="form-control payroll-calc" id="deduction_amount" name="deduction_amount" step="0.01" min="0" value="0">
-                        </div>
-                        <div class="col-md-4">
-                            <label for="net_salary_preview" class="form-label">Net Salary</label>
-                            <input type="text" class="form-control" id="net_salary_preview" readonly>
-                        </div>
-                        <div class="col-md-4">
-                            <label for="payout_destination_preview" class="form-label">Payout Destination</label>
-                            <input type="text" class="form-control" id="payout_destination_preview" readonly>
-                        </div>
-                        <div class="col-md-4">
-                            <label for="payout_channel_preview" class="form-label">Preferred Payout</label>
-                            <input type="text" class="form-control" id="payout_channel_preview" readonly>
-                        </div>
-                        <div class="col-12">
-                            <label for="request_comment" class="form-label">Accountant Request Comment</label>
-                            <textarea class="form-control" id="request_comment" name="request_comment" rows="3" placeholder="Describe this salary payment request..."></textarea>
-                        </div>
-                        <div class="col-12">
-                            <button type="submit" name="create_salary_request" class="btn btn-primary">Create Salary Request</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-    <?php endif; ?>
-
     <div class="row">
         <div class="col-12">
             <div class="card">
                 <div class="card-header"><h5 class="mb-0"><i class="fas fa-list"></i> Salary Requests</h5></div>
                 <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-striped align-middle">
+                        <table class="table table-striped table-modern table-workflow-actions align-middle">
                             <thead>
                                 <tr>
                                     <th>Month</th>
@@ -476,22 +424,6 @@ include '../includes/header.php';
 </div>
 
 <script>
-function updatePayrollPreview() {
-    const basic = parseFloat(document.getElementById('basic_salary')?.value || '0');
-    const bonus = parseFloat(document.getElementById('bonus_amount')?.value || '0');
-    const deductions = parseFloat(document.getElementById('deduction_amount')?.value || '0');
-    const net = basic + bonus - deductions;
-    const netField = document.getElementById('net_salary_preview');
-    if (netField) {
-        netField.value = net.toFixed(2);
-    }
-
-    const userSelect = document.getElementById('salary_user_id');
-    const selected = userSelect ? userSelect.options[userSelect.selectedIndex] : null;
-    document.getElementById('payout_destination_preview').value = selected ? (selected.dataset.destination || '') : '';
-    document.getElementById('payout_channel_preview').value = selected ? ((selected.dataset.channel || 'mobile') === 'bank' ? 'Bank Transfer' : 'Mobile Money') : '';
-}
-
 function openPayrollModal(type, id) {
     if (type === 'manager') {
         document.getElementById('managerPayrollRequestId').value = id;
@@ -521,14 +453,6 @@ function openPayrollModal(type, id) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('.payroll-calc').forEach(function(input) {
-        input.addEventListener('input', updatePayrollPreview);
-    });
-    const userSelect = document.getElementById('salary_user_id');
-    if (userSelect) {
-        userSelect.addEventListener('change', updatePayrollPreview);
-    }
-    updatePayrollPreview();
 });
 </script>
 

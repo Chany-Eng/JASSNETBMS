@@ -8,6 +8,7 @@ if (!isLoggedIn()) {
 }
 
 requirePermission(['Super Admin']);
+ensureUserIdentitySchema($conn);
 snippeEnsureUserPayoutFields($conn);
 $bankOptions = snippeRenderBankOptions();
 
@@ -18,6 +19,16 @@ $success_message = $_SESSION['success_message'] ?? '';
 if ($success_message) {
     unset($_SESSION['success_message']);
 }
+
+$userRoleOptions = [
+    ['value' => 'Sales', 'icon' => 'fa-chart-line'],
+    ['value' => 'Technician', 'icon' => 'fa-screwdriver-wrench'],
+    ['value' => 'Store Keeper', 'icon' => 'fa-box-open'],
+    ['value' => 'Manager', 'icon' => 'fa-user-tie'],
+    ['value' => 'Director', 'icon' => 'fa-briefcase'],
+    ['value' => 'Accountant', 'icon' => 'fa-calculator'],
+    ['value' => 'Super Admin', 'icon' => 'fa-shield-halved'],
+];
 
 function generateTemporaryPassword($length = 10) {
     $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#$%';
@@ -160,16 +171,16 @@ if (!$users) {
 </div>
 <?php endif; ?>
 
-<div class="row mb-4">
-    <div class="col-md-12">
-        <div class="d-flex justify-content-between align-items-center">
-            <h2><i class="fas fa-users"></i> User Management</h2>
-            <a href="add_user.php" class="btn btn-primary">
-                <i class="fas fa-user-plus"></i> Add User
-            </a>
-        </div>
-    </div>
-</div>
+<?php echo renderPageHero([
+    'eyebrow' => 'User Administration',
+    'title' => 'User Management',
+    'icon' => 'fa-users',
+    'subtitle' => 'Manage staff accounts, roles, payout settings, identity details, and SMS password reset actions from one workspace.',
+    'badges' => ['Role control', 'Identity records', 'SMS reset'],
+    'actions' => [
+        '<a href="add_user.php" class="btn btn-light"><i class="fas fa-user-plus"></i> Add User</a>',
+    ],
+]); ?>
 
 <?php if ($message): ?>
 <div class="alert alert-success"><?php echo htmlspecialchars(formatSuccessMessage($message)); ?></div>
@@ -179,6 +190,84 @@ if (!$users) {
 <div class="alert alert-danger"><?php echo htmlspecialchars($error); ?></div>
 <?php endif; ?>
 
+<style>
+    .role-selection-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 0.85rem;
+    }
+
+    .role-option-card {
+        position: relative;
+    }
+
+    .role-option-card input[type="checkbox"] {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .role-option-label {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        min-height: 64px;
+        padding: 0.85rem 1rem;
+        border: 1px solid #d8e2ed;
+        border-radius: 16px;
+        background: #f8fbff;
+        color: #223047;
+        font-weight: 700;
+        cursor: pointer;
+        transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .role-option-label i {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(41, 105, 199, 0.1);
+        color: #1d4f98;
+        font-size: 0.95rem;
+    }
+
+    .role-option-card input[type="checkbox"]:checked + .role-option-label {
+        border-color: #2969c7;
+        background: #edf4fc;
+        box-shadow: 0 16px 34px rgba(41, 105, 199, 0.12);
+        transform: translateY(-1px);
+    }
+
+    .role-option-card input[type="checkbox"]:focus-visible + .role-option-label {
+        outline: 3px solid rgba(41, 105, 199, 0.24);
+        outline-offset: 2px;
+    }
+
+    .field-prefix-group {
+        display: flex;
+        align-items: stretch;
+    }
+
+    .field-prefix-group .field-prefix {
+        display: inline-flex;
+        align-items: center;
+        padding: 0 0.9rem;
+        border: 1px solid #ced4da;
+        border-right: 0;
+        border-radius: 0.375rem 0 0 0.375rem;
+        background: #eef4fb;
+        color: #36506d;
+        font-weight: 700;
+    }
+
+    .field-prefix-group .form-control {
+        border-radius: 0 0.375rem 0.375rem 0;
+    }
+</style>
+
 <div class="row" id="users-list">
     <div class="col-md-12">
         <div class="card">
@@ -187,7 +276,7 @@ if (!$users) {
             </div>
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table table-striped">
+                    <table class="table table-striped table-modern table-workflow-actions">
                         <thead>
                             <tr>
                                 <th>Name</th>
@@ -315,17 +404,16 @@ if (!$users) {
                                 </select>
                             </div>
                             <div class="mb-3">
-                                <label for="edit_role" class="form-label">Roles *</label>
-                                <select class="form-select" id="edit_role" name="role[]" multiple required>
-                                    <option value="Sales">Sales</option>
-                                    <option value="Technician">Technician</option>
-                                    <option value="Store Keeper">Store Keeper</option>
-                                    <option value="Manager">Manager</option>
-                                    <option value="Director">Director</option>
-                                    <option value="Accountant">Accountant</option>
-                                    <option value="Super Admin">Super Admin</option>
-                                </select>
-                                <div class="form-text">Hold Ctrl (Cmd on Mac) to select multiple roles.</div>
+                                <label class="form-label">Roles *</label>
+                                <div id="edit_role" class="role-selection-grid" role="group" aria-label="Select one or more roles for editing">
+                                    <?php foreach ($userRoleOptions as $option): ?>
+                                        <div class="role-option-card">
+                                            <input type="checkbox" id="edit_role_<?php echo strtolower(str_replace(' ', '_', $option['value'])); ?>" name="role[]" value="<?php echo htmlspecialchars($option['value']); ?>">
+                                            <label class="role-option-label" for="edit_role_<?php echo strtolower(str_replace(' ', '_', $option['value'])); ?>"><i class="fas <?php echo htmlspecialchars($option['icon']); ?>"></i><span><?php echo htmlspecialchars($option['value']); ?></span></label>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                                <div class="form-text">Select one or more roles for this user account.</div>
                             </div>
                         </div>
                         <div class="col-md-6">
@@ -353,7 +441,11 @@ if (!$users) {
                             </div>
                             <div class="mb-3">
                                 <label for="edit_payout_phone" class="form-label">Payout Phone</label>
-                                <input type="tel" class="form-control" id="edit_payout_phone" name="payout_phone">
+                                <div class="field-prefix-group">
+                                    <span class="field-prefix">255</span>
+                                    <input type="tel" class="form-control" id="edit_payout_phone" name="payout_phone" placeholder="7XXXXXXXX" inputmode="numeric" maxlength="12">
+                                </div>
+                                <div class="form-text">Mobile payout number will automatically start with 255.</div>
                             </div>
                             <div class="mb-3">
                                 <label for="edit_preferred_payout_channel" class="form-label">Preferred Payout Channel</label>
@@ -493,12 +585,11 @@ function editUser(id) {
     document.getElementById('edit_payout_phone').value = row.dataset.payout_phone || '';
     document.getElementById('edit_preferred_payout_channel').value = row.dataset.preferred_payout_channel || 'mobile';
 
-    const roleSelect = document.getElementById('edit_role');
     const roleData = row.dataset.role || '';
     const roles = roleData ? roleData.split(',').map(r => r.trim()) : [];
-    for (let i = 0; i < roleSelect.options.length; i++) {
-        roleSelect.options[i].selected = roles.includes(roleSelect.options[i].value);
-    }
+    document.querySelectorAll('#edit_role input[type="checkbox"]').forEach(function(input) {
+        input.checked = roles.includes(input.value);
+    });
 
     document.getElementById('edit_is_active').checked = row.dataset.is_active === '1';
     new bootstrap.Modal(document.getElementById('editUserModal')).show();
@@ -553,6 +644,42 @@ document.addEventListener('DOMContentLoaded', function() {
         firstInput.addEventListener('input', updatePreview);
         lastInput.addEventListener('input', updatePreview);
         updatePreview();
+    }
+
+    function normalizeTanzaniaPhone(value) {
+        const digits = String(value || '').replace(/\D/g, '');
+        if (digits === '') {
+            return '255';
+        }
+
+        if (digits.startsWith('255')) {
+            return digits.slice(0, 12);
+        }
+
+        if (digits.startsWith('0')) {
+            return ('255' + digits.slice(1)).slice(0, 12);
+        }
+
+        if (digits.startsWith('7') || digits.startsWith('6')) {
+            return ('255' + digits).slice(0, 12);
+        }
+
+        return ('255' + digits.replace(/^255+/, '')).slice(0, 12);
+    }
+
+    const editPayoutPhoneInput = document.getElementById('edit_payout_phone');
+    if (editPayoutPhoneInput) {
+        editPayoutPhoneInput.addEventListener('focus', function() {
+            editPayoutPhoneInput.value = normalizeTanzaniaPhone(editPayoutPhoneInput.value);
+        });
+
+        editPayoutPhoneInput.addEventListener('input', function() {
+            editPayoutPhoneInput.value = normalizeTanzaniaPhone(editPayoutPhoneInput.value);
+        });
+
+        editPayoutPhoneInput.addEventListener('blur', function() {
+            editPayoutPhoneInput.value = normalizeTanzaniaPhone(editPayoutPhoneInput.value);
+        });
     }
 
     bindUsernamePreview('edit_first_name', 'edit_last_name', 'edit_username');

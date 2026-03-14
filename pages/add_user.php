@@ -8,11 +8,13 @@ if (!isLoggedIn()) {
 }
 
 requirePermission(['Super Admin']);
+ensureUserIdentitySchema($conn);
 snippeEnsureUserPayoutFields($conn);
 $bankOptions = snippeRenderBankOptions();
 
 $message = '';
 $error = '';
+$submittedRoles = isset($_POST['role']) && is_array($_POST['role']) ? array_map('strval', $_POST['role']) : [];
 
 // Check for success message
 $success_message = isset($_SESSION['success_message']) ? $_SESSION['success_message'] : '';
@@ -110,6 +112,84 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <div class="alert alert-danger"><?php echo $error; ?></div>
 <?php endif; ?>
 
+<style>
+    .role-selection-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 0.85rem;
+    }
+
+    .role-option-card {
+        position: relative;
+    }
+
+    .role-option-card input[type="checkbox"] {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .role-option-label {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        min-height: 64px;
+        padding: 0.85rem 1rem;
+        border: 1px solid #d8e2ed;
+        border-radius: 16px;
+        background: #f8fbff;
+        color: #223047;
+        font-weight: 700;
+        cursor: pointer;
+        transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .role-option-label i {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(41, 105, 199, 0.1);
+        color: #1d4f98;
+        font-size: 0.95rem;
+    }
+
+    .role-option-card input[type="checkbox"]:checked + .role-option-label {
+        border-color: #2969c7;
+        background: #edf4fc;
+        box-shadow: 0 16px 34px rgba(41, 105, 199, 0.12);
+        transform: translateY(-1px);
+    }
+
+    .role-option-card input[type="checkbox"]:focus-visible + .role-option-label {
+        outline: 3px solid rgba(41, 105, 199, 0.24);
+        outline-offset: 2px;
+    }
+
+    .field-prefix-group {
+        display: flex;
+        align-items: stretch;
+    }
+
+    .field-prefix-group .field-prefix {
+        display: inline-flex;
+        align-items: center;
+        padding: 0 0.9rem;
+        border: 1px solid #ced4da;
+        border-right: 0;
+        border-radius: 0.375rem 0 0 0.375rem;
+        background: #eef4fb;
+        color: #36506d;
+        font-weight: 700;
+    }
+
+    .field-prefix-group .form-control {
+        border-radius: 0 0.375rem 0.375rem 0;
+    }
+</style>
+
 <div class="row">
     <div class="col-md-12">
         <div class="card">
@@ -132,16 +212,37 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             </div>
                             <div class="mb-3">
                                 <label for="role" class="form-label">Roles *</label>
-                                <select class="form-select" id="role" name="role[]" multiple required>
-                                    <option value="Sales">Sales</option>
-                                    <option value="Technician">Technician</option>
-                                    <option value="Store Keeper">Store Keeper</option>
-                                    <option value="Manager">Manager</option>
-                                    <option value="Director">Director</option>
-                                    <option value="Accountant">Accountant</option>
-                                    <option value="Super Admin">Super Admin</option>
-                                </select>
-                                <div class="form-text">Hold Ctrl (Cmd on Mac) to select multiple roles.</div>
+                                <div id="role" class="role-selection-grid" role="group" aria-label="Select one or more roles">
+                                    <div class="role-option-card">
+                                        <input type="checkbox" id="role_sales" name="role[]" value="Sales" <?php echo in_array('Sales', $submittedRoles, true) ? 'checked' : ''; ?>>
+                                        <label class="role-option-label" for="role_sales"><i class="fas fa-chart-line"></i><span>Sales</span></label>
+                                    </div>
+                                    <div class="role-option-card">
+                                        <input type="checkbox" id="role_technician" name="role[]" value="Technician" <?php echo in_array('Technician', $submittedRoles, true) ? 'checked' : ''; ?>>
+                                        <label class="role-option-label" for="role_technician"><i class="fas fa-screwdriver-wrench"></i><span>Technician</span></label>
+                                    </div>
+                                    <div class="role-option-card">
+                                        <input type="checkbox" id="role_store_keeper" name="role[]" value="Store Keeper" <?php echo in_array('Store Keeper', $submittedRoles, true) ? 'checked' : ''; ?>>
+                                        <label class="role-option-label" for="role_store_keeper"><i class="fas fa-box-open"></i><span>Store Keeper</span></label>
+                                    </div>
+                                    <div class="role-option-card">
+                                        <input type="checkbox" id="role_manager" name="role[]" value="Manager" <?php echo in_array('Manager', $submittedRoles, true) ? 'checked' : ''; ?>>
+                                        <label class="role-option-label" for="role_manager"><i class="fas fa-user-tie"></i><span>Manager</span></label>
+                                    </div>
+                                    <div class="role-option-card">
+                                        <input type="checkbox" id="role_director" name="role[]" value="Director" <?php echo in_array('Director', $submittedRoles, true) ? 'checked' : ''; ?>>
+                                        <label class="role-option-label" for="role_director"><i class="fas fa-briefcase"></i><span>Director</span></label>
+                                    </div>
+                                    <div class="role-option-card">
+                                        <input type="checkbox" id="role_accountant" name="role[]" value="Accountant" <?php echo in_array('Accountant', $submittedRoles, true) ? 'checked' : ''; ?>>
+                                        <label class="role-option-label" for="role_accountant"><i class="fas fa-calculator"></i><span>Accountant</span></label>
+                                    </div>
+                                    <div class="role-option-card">
+                                        <input type="checkbox" id="role_super_admin" name="role[]" value="Super Admin" <?php echo in_array('Super Admin', $submittedRoles, true) ? 'checked' : ''; ?>>
+                                        <label class="role-option-label" for="role_super_admin"><i class="fas fa-shield-halved"></i><span>Super Admin</span></label>
+                                    </div>
+                                </div>
+                                <div class="form-text">Select one or more roles for this user account.</div>
                             </div>
                         </div>
                         <div class="col-md-6">
@@ -206,7 +307,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             </div>
                             <div class="mb-3">
                                 <label for="payout_phone" class="form-label">Payout Phone</label>
-                                <input type="tel" class="form-control" id="payout_phone" name="payout_phone" placeholder="2557XXXXXXXX">
+                                <div class="field-prefix-group">
+                                    <span class="field-prefix">255</span>
+                                    <input type="tel" class="form-control" id="payout_phone" name="payout_phone" placeholder="7XXXXXXXX" inputmode="numeric" maxlength="12">
+                                </div>
+                                <div class="form-text">Mobile payout number will automatically start with 255.</div>
                             </div>
                             <div class="mb-3">
                                 <label for="preferred_payout_channel" class="form-label">Preferred Payout Channel</label>
@@ -237,6 +342,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const lastNameInput = document.getElementById('last_name');
     const usernameInput = document.getElementById('username');
     const fullNamePreviewInput = document.getElementById('full_name_preview');
+    const payoutPhoneInput = document.getElementById('payout_phone');
 
     function slugPart(value) {
         return value
@@ -262,6 +368,43 @@ document.addEventListener('DOMContentLoaded', function() {
     [firstNameInput, middleNameInput, lastNameInput].forEach(function(input) {
         input.addEventListener('input', updateGeneratedFields);
     });
+
+    function normalizeTanzaniaPhone(value) {
+        const digits = String(value || '').replace(/\D/g, '');
+        if (digits === '') {
+            return '255';
+        }
+
+        if (digits.startsWith('255')) {
+            return digits.slice(0, 12);
+        }
+
+        if (digits.startsWith('0')) {
+            return ('255' + digits.slice(1)).slice(0, 12);
+        }
+
+        if (digits.startsWith('7') || digits.startsWith('6')) {
+            return ('255' + digits).slice(0, 12);
+        }
+
+        return ('255' + digits.replace(/^255+/, '')).slice(0, 12);
+    }
+
+    if (payoutPhoneInput) {
+        payoutPhoneInput.value = normalizeTanzaniaPhone(payoutPhoneInput.value);
+
+        payoutPhoneInput.addEventListener('focus', function() {
+            payoutPhoneInput.value = normalizeTanzaniaPhone(payoutPhoneInput.value);
+        });
+
+        payoutPhoneInput.addEventListener('input', function() {
+            payoutPhoneInput.value = normalizeTanzaniaPhone(payoutPhoneInput.value);
+        });
+
+        payoutPhoneInput.addEventListener('blur', function() {
+            payoutPhoneInput.value = normalizeTanzaniaPhone(payoutPhoneInput.value);
+        });
+    }
 
     updateGeneratedFields();
 });

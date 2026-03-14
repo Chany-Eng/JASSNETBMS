@@ -8,6 +8,8 @@ if (session_status() === PHP_SESSION_NONE) {
 	session_start();
 }
 
+$logoutName = trim((string) ($_SESSION['full_name'] ?? ($_SESSION['username'] ?? 'User')));
+
 $_SESSION = [];
 
 if (ini_get('session.use_cookies')) {
@@ -30,6 +32,18 @@ if (ini_get('session.use_cookies')) {
 }
 
 session_destroy();
+
+if (session_status() === PHP_SESSION_NONE) {
+	if (defined('SESSION_NAME')) {
+		session_name(SESSION_NAME);
+	}
+	session_start();
+}
+
+$_SESSION['auth_transition'] = [
+	'type' => 'logout',
+	'name' => $logoutName,
+];
 
 $redirect = defined('APP_URL') ? APP_URL . '/index.php' : 'index.php';
 header('Location: ' . $redirect);

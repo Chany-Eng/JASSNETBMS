@@ -52,6 +52,8 @@ class AuthController extends BaseController
         $this->data = [
             'message' => $message,
             'messageType' => $messageType,
+            'otp_required' => $this->hasPendingOtp(),
+            'otp_context' => $this->getOtpViewData(),
         ];
 
         $this->render('auth/login', $this->data);
@@ -66,6 +68,17 @@ class AuthController extends BaseController
             $this->redirect(APP_URL . '/index.php');
         }
 
+        $authAction = trim((string) ($this->post('auth_action') ?? 'login'));
+        if ($authAction === 'verify_otp') {
+            $this->verifyOtpSubmit();
+            return;
+        }
+
+        if ($authAction === 'resend_otp') {
+            $this->resendOtpSubmit();
+            return;
+        }
+
         // Validate inputs
         $username = $this->sanitize($this->post('username'));
         $password = $this->post('password');
@@ -76,47 +89,365 @@ class AuthController extends BaseController
             $this->redirect(APP_URL . '/index.php');
         }
 
+        $lockState = $this->userModel->getLoginDelayState($username);
+        if ($lockState) {
+            $this->warning('Too many failed attempts. Try again in ' . $this->formatRemainingLockTime((int) $lockState['remaining_seconds']) . '.');
+            $this->userModel->logSecurityEvent(
+                'LOGIN_BLOCKED',
+                'Blocked login attempt for username ' . $username . ' because a temporary 4-minute lock is active.',
+                $this->userModel->findByUsername($username)
+            );
+            $this->redirect(APP_URL . '/index.php');
+        }
+
         // Authenticate user
         $user = $this->userModel->authenticate($username, $password);
 
         if (!$user) {
+            $attemptedUser = $this->userModel->findByUsername($username);
             $errors = $this->userModel->getErrors();
             $errorMsg = !empty($errors) ? reset($errors) : 'Invalid credentials';
+
+            $reasonCode = 'username_not_found';
+            if (isset($errors['password'])) {
+                $reasonCode = 'password_incorrect';
+            } elseif (isset($errors['username']) && stripos((string) $errors['username'], 'inactive') !== false) {
+                $reasonCode = 'inactive_account';
+            }
+
+            $attemptState = $this->userModel->recordFailedLoginAttempt($username, $attemptedUser, $reasonCode);
+            $this->userModel->logSecurityEvent(
+                $attemptState['is_locked'] ? 'LOGIN_LOCKED' : 'LOGIN_FAILED',
+                $this->buildFailedLoginDescription($username, $errorMsg, $attemptState),
+                $attemptedUser
+            );
+
+            if ($reasonCode === 'password_incorrect') {
+                $this->userModel->sendSecuritySms($attemptedUser, 'wrong_password');
+            }
+
+            if ($attemptState['is_locked']) {
+                $this->userModel->sendSecuritySms($attemptedUser, 'lockout', $attemptState['locked_until']);
+                $errorMsg = 'Too many failed attempts. Wait 4 minutes before trying again.';
+            } elseif ($reasonCode === 'password_incorrect' && $attemptState['remaining_attempts'] > 0) {
+                $errorMsg .= '. Remaining attempts: ' . $attemptState['remaining_attempts'];
+            }
+
             $this->error($errorMsg);
             $this->redirect(APP_URL . '/index.php');
         }
 
-        // Set session
+        $this->userModel->clearFailedLoginAttempts($username);
+
+        if (!$this->startOtpChallenge($user, $remember)) {
+            $this->error('OTP haikuweza kutumwa kwenye SMS au WhatsApp. Wasiliana na administrator.');
+            $this->redirect(APP_URL . '/index.php');
+        }
+
+        $this->success('Tumekutumia OTP kwenye SMS yako, na WhatsApp pia ikiwa channel hiyo iko tayari kwa account yako. Ingiza code kuendelea.');
+        $this->redirect(APP_URL . '/index.php');
+    }
+
+    /**
+     * Verify submitted OTP and complete login.
+     *
+     * @return void
+     */
+    private function verifyOtpSubmit()
+    {
+        $pendingAuth = $this->getPendingOtpSession();
+        if (!$pendingAuth) {
+            $this->warning('OTP session imeisha. Ingia tena kwa username na password.');
+            $this->redirect(APP_URL . '/index.php');
+        }
+
+        $otpCode = preg_replace('/\D+/', '', (string) ($this->post('otp_code') ?? ''));
+        if ($otpCode === '' || strlen($otpCode) !== 6) {
+            $this->error('Weka OTP ya tarakimu 6.');
+            $this->redirect(APP_URL . '/index.php');
+        }
+
+        if (($pendingAuth['expires_at'] ?? 0) < time()) {
+            $this->clearPendingOtpSession();
+            $this->warning('OTP ime-expire. Ingia tena kuomba code mpya.');
+            $this->redirect(APP_URL . '/index.php');
+        }
+
+        $attempts = (int) ($pendingAuth['attempts'] ?? 0) + 1;
+        $_SESSION['pending_auth']['attempts'] = $attempts;
+        if (!password_verify($otpCode, (string) ($pendingAuth['otp_hash'] ?? ''))) {
+            if ($attempts >= LOGIN_OTP_MAX_ATTEMPTS) {
+                $this->clearPendingOtpSession();
+                $this->error('OTP imekosewa mara nyingi. Ingia tena kuanza upya.');
+                $this->redirect(APP_URL . '/index.php');
+            }
+
+            $this->error('OTP si sahihi. Jaribu tena.');
+            $this->redirect(APP_URL . '/index.php');
+        }
+
+        $user = $this->userModel->find((int) $pendingAuth['user_id']);
+        if (!$user) {
+            $this->clearPendingOtpSession();
+            $this->error('Akaunti haikupatikana tena.');
+            $this->redirect(APP_URL . '/index.php');
+        }
+
+        $this->clearPendingOtpSession();
+        $this->completeLogin($user, !empty($pendingAuth['remember']));
+        $this->redirect(APP_URL . '/dashboard.php');
+    }
+
+    /**
+    * Resend OTP for a pending login challenge.
+     *
+     * @return void
+     */
+    private function resendOtpSubmit()
+    {
+        $pendingAuth = $this->getPendingOtpSession();
+        if (!$pendingAuth) {
+            $this->warning('OTP session imeisha. Ingia tena kwa username na password.');
+            $this->redirect(APP_URL . '/index.php');
+        }
+
+        $sentAt = (int) ($pendingAuth['sent_at'] ?? 0);
+        $secondsSinceLastSend = time() - $sentAt;
+        if ($sentAt > 0 && $secondsSinceLastSend < LOGIN_OTP_RESEND_SECONDS) {
+            $this->warning('Subiri sekunde ' . (LOGIN_OTP_RESEND_SECONDS - $secondsSinceLastSend) . ' kabla ya kutuma OTP tena.');
+            $this->redirect(APP_URL . '/index.php');
+        }
+
+        $user = $this->userModel->find((int) $pendingAuth['user_id']);
+        if (!$user || !$this->refreshOtpChallenge($user)) {
+            $this->error('OTP haikuweza kutumwa tena kwenye SMS au WhatsApp.');
+            $this->redirect(APP_URL . '/index.php');
+        }
+
+        $this->success('OTP mpya imetumwa kwenye SMS yako, na WhatsApp pia ikiwa channel hiyo iko tayari kwa account yako.');
+        $this->redirect(APP_URL . '/index.php');
+    }
+
+    /**
+     * Build a readable admin-history message for failed authentication.
+     *
+     * @param string $username
+     * @param string $errorMsg
+     * @param array $attemptState
+     * @return string
+     */
+    private function buildFailedLoginDescription($username, $errorMsg, $attemptState)
+    {
+        $description = 'Failed login for username ' . $username . ': ' . $errorMsg . '.';
+
+        if (!empty($attemptState['is_locked'])) {
+            return $description . ' Account locked for 4 minutes after attempt ' . (int) ($attemptState['attempt_count'] ?? 0) . '.';
+        }
+
+        if (isset($attemptState['remaining_attempts'])) {
+            return $description . ' Remaining attempts before temporary lock: ' . (int) $attemptState['remaining_attempts'] . '.';
+        }
+
+        return $description;
+    }
+
+    /**
+     * Convert remaining seconds into a short lockout label.
+     *
+     * @param int $remainingSeconds
+     * @return string
+     */
+    private function formatRemainingLockTime($remainingSeconds)
+    {
+        $minutes = (int) floor($remainingSeconds / 60);
+        $seconds = $remainingSeconds % 60;
+
+        if ($minutes <= 0) {
+            return $seconds . ' seconds';
+        }
+
+        if ($seconds === 0) {
+            return $minutes . ' minute' . ($minutes === 1 ? '' : 's');
+        }
+
+        return $minutes . 'm ' . str_pad((string) $seconds, 2, '0', STR_PAD_LEFT) . 's';
+    }
+
+    /**
+     * Start a pending OTP challenge in session.
+     *
+     * @param array $user
+     * @param bool $remember
+     * @return bool
+     */
+    private function startOtpChallenge($user, $remember)
+    {
+        $otpCode = (string) random_int(100000, 999999);
+        $_SESSION['pending_auth'] = [
+            'user_id' => (int) $user['id'],
+            'username' => (string) $user['username'],
+            'full_name' => trim((string) ($user['full_name'] ?? $user['username'])),
+            'phone' => (string) ($user['phone'] ?? ''),
+            'remember' => $remember,
+            'otp_code' => $otpCode,
+            'otp_hash' => password_hash($otpCode, PASSWORD_DEFAULT),
+            'expires_at' => time() + (LOGIN_OTP_EXPIRY_MINUTES * 60),
+            'sent_at' => time(),
+            'attempts' => 0,
+            'delivery_warning' => '',
+        ];
+
+        $sent = $this->userModel->sendLoginOtpSms($user, $otpCode);
+        if (!$sent) {
+            if ($this->allowOtpTestingFallback()) {
+                $_SESSION['pending_auth']['delivery_warning'] = 'OTP delivery skipped for testing because this account has no reachable SMS/WhatsApp destination.';
+                return true;
+            }
+
+            $this->clearPendingOtpSession();
+        }
+
+        return $sent;
+    }
+
+    /**
+     * Replace a pending OTP with a fresh code.
+     *
+     * @param array $user
+     * @return bool
+     */
+    private function refreshOtpChallenge($user)
+    {
+        $otpCode = (string) random_int(100000, 999999);
+        $_SESSION['pending_auth']['otp_code'] = $otpCode;
+        $_SESSION['pending_auth']['otp_hash'] = password_hash($otpCode, PASSWORD_DEFAULT);
+        $_SESSION['pending_auth']['expires_at'] = time() + (LOGIN_OTP_EXPIRY_MINUTES * 60);
+        $_SESSION['pending_auth']['sent_at'] = time();
+        $_SESSION['pending_auth']['attempts'] = 0;
+        $_SESSION['pending_auth']['delivery_warning'] = '';
+
+        $sent = $this->userModel->sendLoginOtpSms($user, $otpCode);
+        if (!$sent && $this->allowOtpTestingFallback()) {
+            $_SESSION['pending_auth']['delivery_warning'] = 'OTP delivery skipped for testing because this account has no reachable SMS/WhatsApp destination.';
+            return true;
+        }
+
+        return $sent;
+    }
+
+    /**
+     * Complete the authenticated session after OTP verification.
+     *
+     * @param array $user
+     * @param bool $remember
+     * @return void
+     */
+    private function completeLogin($user, $remember)
+    {
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
+        $_SESSION['full_name'] = trim((string) ($user['full_name'] ?? '')) !== '' ? $user['full_name'] : $user['username'];
         $_SESSION['role'] = $user['role'];
 
-        // Remember me
         if ($remember) {
             $token = bin2hex(random_bytes(32));
-            $expiry = time() + (30 * 24 * 60 * 60); // 30 days
+            $expiry = time() + (30 * 24 * 60 * 60);
 
             setcookie('remember_token', $token, $expiry, '/', '', false, true);
             setcookie('user_id', $user['id'], $expiry, '/', '', false, true);
 
-            // Save token to database (optional — column may not exist)
             try {
                 $this->userModel->update($user['id'], ['remember_token' => $token]);
             } catch (\Exception $e) {
-                // Silently skip if remember_token column doesn't exist
             }
         }
 
-        // Update last login
         $this->userModel->updateLastLogin($user['id']);
+        $this->logActivity('LOGIN', 'User logged in after OTP verification', 'users', $user['id']);
 
-        // Log activity
-        $this->logActivity('LOGIN', 'User logged in', 'users', $user['id']);
-
-        // Flash message
         $_SESSION['login_success'] = true;
+        $_SESSION['login_success_name'] = $_SESSION['full_name'];
+        $_SESSION['auth_transition'] = [
+            'type' => 'login',
+            'name' => $_SESSION['full_name'],
+        ];
+    }
 
-        $this->redirect(APP_URL . '/dashboard.php');
+    /**
+     * Check whether there is an active OTP session.
+     *
+     * @return bool
+     */
+    private function hasPendingOtp()
+    {
+        $pendingAuth = $this->getPendingOtpSession();
+        return $pendingAuth !== null && (int) ($pendingAuth['expires_at'] ?? 0) >= time();
+    }
+
+    /**
+     * Return pending OTP session data.
+     *
+     * @return array|null
+     */
+    private function getPendingOtpSession()
+    {
+        $pendingAuth = $_SESSION['pending_auth'] ?? null;
+        return is_array($pendingAuth) ? $pendingAuth : null;
+    }
+
+    /**
+     * Clear pending OTP data.
+     *
+     * @return void
+     */
+    private function clearPendingOtpSession()
+    {
+        unset($_SESSION['pending_auth']);
+    }
+
+    /**
+     * Build OTP view metadata.
+     *
+     * @return array|null
+     */
+    private function getOtpViewData()
+    {
+        $pendingAuth = $this->getPendingOtpSession();
+        if (!$pendingAuth) {
+            return null;
+        }
+
+        $maskedPhone = $this->maskPhoneNumber((string) ($pendingAuth['phone'] ?? ''));
+        $remainingSeconds = max(0, (int) ($pendingAuth['expires_at'] ?? 0) - time());
+
+        return [
+            'name' => (string) ($pendingAuth['full_name'] ?? $pendingAuth['username'] ?? 'User'),
+            'masked_phone' => $maskedPhone,
+            'remaining_seconds' => $remainingSeconds,
+            'otp_code' => (string) ($pendingAuth['otp_code'] ?? ''),
+            'delivery_warning' => (string) ($pendingAuth['delivery_warning'] ?? ''),
+        ];
+    }
+
+    private function allowOtpTestingFallback()
+    {
+        return defined('APP_DEBUG') && APP_DEBUG;
+    }
+
+    /**
+     * Mask a phone number for the OTP screen.
+     *
+     * @param string $phone
+     * @return string
+     */
+    private function maskPhoneNumber($phone)
+    {
+        $digits = preg_replace('/\D+/', '', $phone);
+        if ($digits === null || strlen($digits) < 4) {
+            return 'namba iliyohifadhiwa';
+        }
+
+        return str_repeat('*', max(0, strlen($digits) - 4)) . substr($digits, -4);
     }
 
     /**
@@ -124,6 +455,8 @@ class AuthController extends BaseController
      */
     public function logout()
     {
+        $logoutName = trim((string) ($_SESSION['full_name'] ?? ($_SESSION['username'] ?? 'User')));
+
         if ($this->isLoggedIn()) {
             $this->logActivity('LOGOUT', 'User logged out', 'users', $_SESSION['user_id']);
         }
@@ -132,11 +465,21 @@ class AuthController extends BaseController
         session_unset();
         session_destroy();
 
+        if (session_status() === PHP_SESSION_NONE) {
+            session_name(SESSION_NAME);
+            session_start();
+        }
+
+        $_SESSION['auth_transition'] = [
+            'type' => 'logout',
+            'name' => $logoutName,
+        ];
+
         // Clear remember me cookie
         setcookie('remember_token', '', time() - 3600, '/');
         setcookie('user_id', '', time() - 3600, '/');
 
-        $this->redirect(APP_URL . '/index.php?message=logged_out');
+        $this->redirect(APP_URL . '/index.php');
     }
 
     /**

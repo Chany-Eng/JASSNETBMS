@@ -125,6 +125,10 @@ abstract class BaseController
         // Make data available to view
         extract($this->data);
 
+        // Expose the shared mysqli connection to hybrid views that still rely on
+        // legacy helper functions for notifications and audit hooks.
+        $conn = $GLOBALS['conn'] ?? null;
+
         // make controller available within views for permission checks, helpers
         $controller = $this;
 

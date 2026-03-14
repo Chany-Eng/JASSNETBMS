@@ -14,6 +14,8 @@ if (!defined('APP_ROOT')) {
     define('APP_ROOT', dirname(__DIR__));
 }
 
+require_once APP_ROOT . '/includes/functions.php';
+
 // Load autoloader
 require_once APP_ROOT . '/config/Autoloader.php';
 

@@ -15,7 +15,8 @@ define('APP_ENV', getenv('APP_ENV') ?: 'development');
 define('APP_DEBUG', APP_ENV === 'development');
 
 // Application Name and Version
-define('APP_NAME', 'JASSNET Business Management System');
+define('APP_NAME', 'JASSNET ERMS');
+define('APP_BRAND', 'ERMS');
 define('APP_VERSION', '2.0.0');
 
 // Database Configuration
@@ -54,6 +55,9 @@ define('SESSION_NAME', 'JASSNET_SESSION');
 define('PASSWORD_MIN_LENGTH', 8);
 define('PASSWORD_EXPIRATION_DAYS', 28);
 define('PASSWORD_WARNING_DAYS', 5);
+define('LOGIN_OTP_EXPIRY_MINUTES', 5);
+define('LOGIN_OTP_RESEND_SECONDS', 60);
+define('LOGIN_OTP_MAX_ATTEMPTS', 5);
 
 // File Upload Settings
 define('MAX_FILE_SIZE', 5 * 1024 * 1024); // 5MB
@@ -61,9 +65,26 @@ define('ALLOWED_FILE_TYPES', ['jpg', 'jpeg', 'png', 'pdf']);
 
 // SMS Configuration
 define('SENDER_ID', 'JASSNET');
-define('SMS_API_URL', getenv('SMS_API_URL') ?? '');
-define('SMS_API_KEY', getenv('SMS_API_KEY') ?? '');
-define('SMS_PROVIDER', getenv('SMS_PROVIDER') ?? 'custom');
+define('SMS_API_URL', getenv('SMS_API_URL') ?: 'http://mshastra.com/sendsms_api.json.aspx');
+define('SMS_API_USERNAME', getenv('SMS_API_USERNAME') ?: 'jassnet012');
+define('SMS_API_PASSWORD', getenv('SMS_API_PASSWORD') ?: 'p4_sm661');
+define('SMS_API_KEY', getenv('SMS_API_KEY') ?: '');
+define('SMS_PROVIDER', getenv('SMS_PROVIDER') ?: 'custom');
+
+// WhatsApp Configuration
+define('WHATSAPP_API_VERSION', getenv('WHATSAPP_API_VERSION') ?: 'v22.0');
+define('WHATSAPP_API_BASE_URL', getenv('WHATSAPP_API_BASE_URL') ?: 'https://graph.facebook.com');
+define('WHATSAPP_API_TOKEN', getenv('WHATSAPP_API_TOKEN') ?: 'EAF0d4yFdn7YBQ7Fwyzdk0NI1LwszszGnBEg6UCZAKtdDF2TY9slp2rKQyboGWRzZAMwp8JKDLIfMV8hBb39x5x7FMKX1eZAHJwUFZAWJOBgA5OzWe8RRZB0YOyOc3KikNc1bynmMrcPycacE0XPYoVdhyxU8WPp6hrNHDsg0IGZBZB6SHB3PCP3sljN5FFZC8OfUw9rrpoQCo2pJBpfWqwaG7ipCdZCO9HIkP16YjFOdxnkZCeuYfkGhbTPP8jevt1AtzfZCvFj3JLogs7lJdRbIgowYYwm7udEiUSXkAZDZD');
+define('WHATSAPP_PHONE_NUMBER_ID', getenv('WHATSAPP_PHONE_NUMBER_ID') ?: '1023890624140571');
+define('WHATSAPP_MESSAGE_MODE', getenv('WHATSAPP_MESSAGE_MODE') ?: 'text');
+define('WHATSAPP_DEFAULT_TEMPLATE', getenv('WHATSAPP_DEFAULT_TEMPLATE') ?: 'hello_world');
+define('WHATSAPP_DEFAULT_TEMPLATE_LANGUAGE', getenv('WHATSAPP_DEFAULT_TEMPLATE_LANGUAGE') ?: 'en_US');
+define('WHATSAPP_OTP_TEMPLATE', getenv('WHATSAPP_OTP_TEMPLATE') ?: '');
+define('WHATSAPP_OTP_TEMPLATE_LANGUAGE', getenv('WHATSAPP_OTP_TEMPLATE_LANGUAGE') ?: 'en_US');
+define('WHATSAPP_ENABLED', getenv('WHATSAPP_ENABLED') !== false
+    ? filter_var(getenv('WHATSAPP_ENABLED'), FILTER_VALIDATE_BOOLEAN)
+    : (WHATSAPP_API_TOKEN !== '' && WHATSAPP_PHONE_NUMBER_ID !== '')
+);
 
 // Snippe Payment Gateway
 define('SNIPPE_API_BASE_URL', getenv('SNIPPE_API_BASE_URL') ?: 'https://api.snippe.sh');

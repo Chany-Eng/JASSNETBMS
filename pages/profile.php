@@ -1,5 +1,6 @@
 <?php
 require_once '../includes/functions.php';
+require_once '../includes/payroll_workflow.php';
 
 if (!isLoggedIn()) {
     header("Location: ../index.php");
@@ -7,8 +8,32 @@ if (!isLoggedIn()) {
 }
 
 $user = getCurrentUser();
+ensureUserIdentitySchema($conn);
+payrollEnsureSchema($conn);
 $message = '';
 $error = '';
+$latestSalary = null;
+
+$latestSalaryStmt = $conn->prepare(
+    "SELECT sr.*, finalizer.full_name AS finalized_by_name
+     FROM salary_requests sr
+     LEFT JOIN users finalizer ON sr.finalized_by = finalizer.id
+     WHERE sr.user_id = ? AND sr.status = 'Paid'
+     ORDER BY sr.finalized_at DESC, sr.id DESC
+     LIMIT 1"
+);
+if ($latestSalaryStmt) {
+    $latestSalaryStmt->bind_param('i', $user['id']);
+    $latestSalaryStmt->execute();
+    $latestSalary = $latestSalaryStmt->get_result()->fetch_assoc() ?: null;
+    if ($latestSalary) {
+        $finalizedAt = (string) ($latestSalary['finalized_at'] ?? '');
+        $latestSalary['salary_month_label'] = date('F Y', strtotime((string) ($latestSalary['salary_month'] ?? date('Y-m-01'))));
+        $latestSalary['paid_date_label'] = $finalizedAt !== '' ? date('d M Y', strtotime($finalizedAt)) : '-';
+        $latestSalary['paid_day_label'] = $finalizedAt !== '' ? date('l', strtotime($finalizedAt)) : '-';
+        $latestSalary['payout_method_label'] = payrollPayoutLabel((string) ($latestSalary['payout_channel'] ?? 'mobile'));
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['update_profile'])) {
@@ -32,6 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $stmt->bind_param("sssssi", $full_name, $phone, $email, $address, $profile_photo, $user['id']);
             
             if ($stmt->execute()) {
+                appLogActivity($conn, 'UPDATE_PROFILE', 'Updated own profile information', 'users', (int) $user['id']);
                 $message = 'Profile updated successfully';
                 $user = getCurrentUser(); // Refresh user data
             } else {
@@ -72,6 +98,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <h5><?php echo htmlspecialchars($user['full_name']); ?></h5>
                 <p class="text-muted"><?php echo htmlspecialchars($user['role']); ?></p>
                 <p class="text-muted">Employee ID: <?php echo htmlspecialchars($user['employee_id']); ?></p>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-money-check-dollar"></i> My Latest Salary</h5>
+            </div>
+            <div class="card-body">
+                <?php if ($latestSalary): ?>
+                    <div class="mb-2"><strong>Month:</strong> <?php echo htmlspecialchars((string) ($latestSalary['salary_month_label'] ?? '-')); ?></div>
+                    <div class="mb-2"><strong>Paid On:</strong> <?php echo htmlspecialchars((string) ($latestSalary['paid_date_label'] ?? '-')); ?> (<?php echo htmlspecialchars((string) ($latestSalary['paid_day_label'] ?? '-')); ?>)</div>
+                    <div class="mb-2"><strong>Amount:</strong> <span class="text-success">Tshs. <?php echo number_format((float) ($latestSalary['net_salary'] ?? 0), 2); ?></span></div>
+                    <div class="mb-2"><strong>Method:</strong> <?php echo htmlspecialchars((string) ($latestSalary['payout_method_label'] ?? '-')); ?></div>
+                    <div class="mb-2"><strong>Destination:</strong> <?php echo htmlspecialchars((string) ($latestSalary['payout_destination'] ?? '-')); ?></div>
+                    <div class="mb-3"><strong>Reference:</strong> <?php echo htmlspecialchars((string) (($latestSalary['payment_reference'] ?? '') !== '' ? $latestSalary['payment_reference'] : 'N/A')); ?></div>
+                    <a href="payroll.php?export=pdf&id=<?php echo (int) $latestSalary['id']; ?>" class="btn btn-outline-danger btn-sm">
+                        <i class="fas fa-file-pdf"></i> Download Payslip
+                    </a>
+                <?php else: ?>
+                    <p class="text-muted mb-0">No paid salary record found yet.</p>
+                <?php endif; ?>
             </div>
         </div>
     </div>

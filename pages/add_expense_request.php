@@ -1,5 +1,6 @@
 <?php
 require_once '../includes/functions.php';
+require_once '../includes/expense_workflow.php';
 
 if (!isLoggedIn()) {
     header("Location: ../index.php");
@@ -7,6 +8,7 @@ if (!isLoggedIn()) {
 }
 
 requirePermission(['Sales', 'Technician', 'Manager', 'Director', 'Accountant', 'Super Admin']);
+expenseEnsureWorkflowSchema($conn);
 
 $error = '';
 $success_message = '';
@@ -25,6 +27,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt->bind_param("isssdsss", $_SESSION['user_id'], $department, $category, $description, $amount_requested, $reason, $project_ref, $notes);
         
         if ($stmt->execute()) {
+            $requestId = (int) $stmt->insert_id;
+            $requester = getCurrentUser();
+            $requesterName = trim((string) ($requester['full_name'] ?? ($_SESSION['full_name'] ?? 'Requester')));
+            $formattedAmount = number_format($amount_requested, 2);
+            appLogActivity($conn, 'CREATE_EXPENSE_REQUEST', 'Submitted expense request #' . $requestId, 'expense_requests', $requestId);
+            if ($requester) {
+                appSendSmsToUser($requester, 'ERMS: Expense request #' . $requestId . ' ya Tshs. ' . $formattedAmount . ' imepokelewa. Inasubiri Manager approval.');
+            }
+            appSendSmsToRoles($conn, ['Manager'], 'ERMS: Expense request #' . $requestId . ' kutoka ' . $requesterName . ' ya Tshs. ' . $formattedAmount . ' inasubiri approval yako.', [(int) ($_SESSION['user_id'] ?? 0)]);
             $_SESSION['success_message'] = 'Expense request submitted successfully';
             header("Location: view_expense_requests.php");
             exit();

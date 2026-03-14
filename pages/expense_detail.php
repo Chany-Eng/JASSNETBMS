@@ -17,6 +17,7 @@ $receipt = null;
 $payouts = [];
 $latestPayout = null;
 $payoutSummary = null;
+$receiptPreviewType = '';
 
 snippeEnsurePayoutTables($conn);
 expenseEnsureWorkflowSchema($conn);
@@ -65,6 +66,12 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
         $result = $stmt->get_result();
         if ($result->num_rows > 0) {
             $receipt = $result->fetch_assoc();
+            $receiptFile = strtolower((string) pathinfo((string) ($receipt['receipt_file'] ?? ''), PATHINFO_EXTENSION));
+            if (in_array($receiptFile, ['jpg', 'jpeg', 'png'], true)) {
+                $receiptPreviewType = 'image';
+            } elseif ($receiptFile === 'pdf') {
+                $receiptPreviewType = 'pdf';
+            }
         }
     }
 }
@@ -369,6 +376,18 @@ include '../includes/header.php';
                                             </a>
                                         </div>
                                     </div>
+                                    <div class="row mt-3">
+                                        <div class="col-12">
+                                            <p><strong>Receipt Preview:</strong></p>
+                                            <?php if ($receiptPreviewType === 'image'): ?>
+                                                <img src="../uploads/<?php echo htmlspecialchars($receipt['receipt_file']); ?>" alt="Receipt Preview" class="img-fluid rounded border shadow-sm expense-receipt-preview">
+                                            <?php elseif ($receiptPreviewType === 'pdf'): ?>
+                                                <iframe src="../uploads/<?php echo htmlspecialchars($receipt['receipt_file']); ?>" class="w-100 border rounded expense-receipt-pdf" title="Receipt Preview"></iframe>
+                                            <?php else: ?>
+                                                <div class="text-muted">Preview is not available for this file type. Use the download button to open it.</div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -418,6 +437,17 @@ include '../includes/header.php';
 
 .approval-step {
     padding: 20px;
+}
+
+.expense-receipt-preview {
+    max-height: 520px;
+    object-fit: contain;
+    background: #f8fafc;
+}
+
+.expense-receipt-pdf {
+    min-height: 620px;
+    background: #fff;
 }
 </style>
 

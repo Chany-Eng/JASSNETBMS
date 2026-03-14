@@ -38,14 +38,20 @@ class DashboardController extends BaseController
         $permissions = $this->getDashboardPermissions();
 
         try {
+            $inventoryStats = $this->inventoryModel->getStatistics();
+            $stationStats = $this->stationModel->getStatistics();
+            $stats = $this->getStats($inventoryStats, $stationStats);
             $this->data = [
                 'user' => $this->user,
-                'stats' => $this->getStats(),
+                'stats' => $stats,
                 'message' => $message,
                 'recent_income' => $this->getRecentIncome(5),
                 'recent_expenses' => $this->getRecentExpenses(5),
                 'recent_stations' => $this->getRecentStations(5),
                 'low_stock_items' => $this->getRecentLowStock(),
+                'recent_activities' => $this->getRecentActivities(8),
+                'report_links' => $this->getReportLinks(),
+                'role_notices' => $this->getRoleNotices($stats, $permissions),
                 'chart_data' => $this->getChartData($permissions),
                 'dashboard_permissions' => $permissions,
             ];
@@ -67,6 +73,9 @@ class DashboardController extends BaseController
                 'recent_expenses' => [],
                 'recent_stations' => [],
                 'low_stock_items' => [],
+                'recent_activities' => [],
+                'report_links' => $this->getReportLinks(),
+                'role_notices' => [],
                 'chart_data' => [
                     'months' => [],
                     'income' => [],
@@ -231,7 +240,7 @@ class DashboardController extends BaseController
     /**
      * Get dashboard statistics
      */
-    private function getStats()
+    private function getStats(array $inventoryStats = [], array $stationStats = [])
     {
         $stats = [];
         $permissions = $this->getDashboardPermissions();
@@ -255,16 +264,20 @@ class DashboardController extends BaseController
 
         // Expense stats
         $stats['approved_expenses'] = $permissions['can_view_expense_financials'] ? $this->expenseModel->getTotalApproved() : 0;
-        $stats['pending_requests'] = $permissions['can_view_expense_operations'] ? $this->expenseModel->getPendingCount() : 0;
-        $stats['pending_expenses_total'] = $permissions['can_view_expense_operations'] ? $this->expenseModel->getTotalPending() : 0;
+        $stats['pending_requests'] = $permissions['can_view_expense_operations'] ? $this->getRelevantExpensePendingCount() : 0;
+        $stats['pending_expenses_total'] = $permissions['can_view_expense_operations'] ? $this->getRelevantExpensePendingTotal() : 0;
 
         // Inventory stats
         $stats['low_stock'] = $permissions['can_view_inventory'] ? count($this->inventoryModel->getLowStock()) : 0;
         $stats['inventory_value'] = $permissions['can_view_inventory_value'] ? $this->inventoryModel->getTotalValue() : 0;
+        $stats['inventory_items'] = $permissions['can_view_inventory'] ? (int) ($inventoryStats['total_items'] ?? 0) : 0;
 
         // Station stats
-        $stats['pending_stations'] = $permissions['can_view_stations'] ? $this->stationModel->getPendingCount() : 0;
+        $stationQueue = $permissions['can_view_stations'] ? $this->getRelevantStationCounts() : ['pending' => 0, 'active' => 0];
+        $stats['pending_stations'] = (int) ($stationQueue['pending'] ?? 0);
         $stats['total_estimated_cost'] = $permissions['can_view_all_financials'] ? $this->stationModel->getTotalEstimatedCost() : 0;
+        $stats['active_stations'] = (int) ($stationQueue['active'] ?? 0);
+        $stats['pending_payroll_requests'] = $permissions['can_view_payroll'] ? $this->getPendingPayrollCount() : 0;
 
         // Net profit
         $stats['net_profit'] = $permissions['can_view_all_financials'] ? ($stats['income_month'] - $stats['approved_expenses']) : 0;
@@ -272,25 +285,136 @@ class DashboardController extends BaseController
         return $stats;
     }
 
+    private function getRelevantExpensePendingCount(): int
+    {
+        $userId = (int) ($this->user['id'] ?? 0);
+
+        if ($this->userHasRole(['Super Admin'])) {
+            return $this->expenseModel->getPendingCount();
+        }
+
+        if ($this->userHasRole(['Accountant'])) {
+            return $this->countRows("SELECT COUNT(*) AS cnt FROM expense_requests WHERE status = 'Pending Accountant Processing'");
+        }
+
+        if ($this->userHasRole(['Director'])) {
+            return $this->countRows("SELECT COUNT(*) AS cnt FROM expense_requests WHERE status = 'Pending Director Approval'");
+        }
+
+        if ($this->userHasRole(['Manager'])) {
+            return $this->countRows("SELECT COUNT(*) AS cnt FROM expense_requests WHERE status = 'Pending Manager Approval'");
+        }
+
+        return $this->countRows(
+            "SELECT COUNT(*) AS cnt FROM expense_requests WHERE requested_by = :user_id AND status NOT IN ('Completed', 'Rejected')",
+            [':user_id' => $userId]
+        );
+    }
+
+    private function getRelevantExpensePendingTotal(): float
+    {
+        $userId = (int) ($this->user['id'] ?? 0);
+
+        if ($this->userHasRole(['Super Admin'])) {
+            return $this->expenseModel->getTotalPending();
+        }
+
+        if ($this->userHasRole(['Accountant'])) {
+            $this->db->prepare("SELECT COALESCE(SUM(amount_requested), 0) AS total FROM expense_requests WHERE status = 'Pending Accountant Processing'");
+            return (float) (($this->db->fetch()['total'] ?? 0));
+        }
+
+        if ($this->userHasRole(['Director'])) {
+            $this->db->prepare("SELECT COALESCE(SUM(amount_requested), 0) AS total FROM expense_requests WHERE status = 'Pending Director Approval'");
+            return (float) (($this->db->fetch()['total'] ?? 0));
+        }
+
+        if ($this->userHasRole(['Manager'])) {
+            $this->db->prepare("SELECT COALESCE(SUM(amount_requested), 0) AS total FROM expense_requests WHERE status = 'Pending Manager Approval'");
+            return (float) (($this->db->fetch()['total'] ?? 0));
+        }
+
+        $this->db->prepare("SELECT COALESCE(SUM(amount_requested), 0) AS total FROM expense_requests WHERE requested_by = :user_id AND status NOT IN ('Completed', 'Rejected')");
+        $this->db->bind(':user_id', $userId);
+        return (float) (($this->db->fetch()['total'] ?? 0));
+    }
+
+    private function getRelevantStationCounts(): array
+    {
+        $userId = (int) ($this->user['id'] ?? 0);
+        $table = $this->stationModel->getTable();
+        $userBinding = [':user_id' => $userId];
+        $userScope = $this->stationAssignedToExists()
+            ? "(requested_by = :user_id OR assigned_to = :user_id)"
+            : "requested_by = :user_id";
+
+        if ($this->userHasRole(['Super Admin'])) {
+            return [
+                'pending' => $this->countRows("SELECT COUNT(*) AS cnt FROM {$table} WHERE status IN ('Pending Manager Approval', 'Pending Director Approval', 'Awaiting Accountant Approval')"),
+                'active' => $this->countRows("SELECT COUNT(*) AS cnt FROM {$table} WHERE status NOT IN ('Completed', 'Rejected')"),
+            ];
+        }
+
+        if ($this->userHasRole(['Accountant'])) {
+            $count = $this->countRows("SELECT COUNT(*) AS cnt FROM {$table} WHERE status = 'Awaiting Accountant Approval'");
+            return ['pending' => $count, 'active' => $count];
+        }
+
+        if ($this->userHasRole(['Director'])) {
+            $count = $this->countRows("SELECT COUNT(*) AS cnt FROM {$table} WHERE status = 'Pending Director Approval'");
+            return ['pending' => $count, 'active' => $count];
+        }
+
+        if ($this->userHasRole(['Manager'])) {
+            $count = $this->countRows("SELECT COUNT(*) AS cnt FROM {$table} WHERE status = 'Pending Manager Approval'");
+            return ['pending' => $count, 'active' => $count];
+        }
+
+        return [
+            'pending' => $this->countRows(
+                "SELECT COUNT(*) AS cnt FROM {$table} WHERE {$userScope} AND status IN ('Pending Manager Approval', 'Pending Director Approval', 'Awaiting Accountant Approval', 'Pending Store Keeper Approval')",
+                $userBinding
+            ),
+            'active' => $this->countRows(
+                "SELECT COUNT(*) AS cnt FROM {$table} WHERE {$userScope} AND status NOT IN ('Completed', 'Rejected')",
+                $userBinding
+            ),
+        ];
+    }
+
     private function getDashboardPermissions(): array
     {
         return [
-            'can_view_all_financials' => $this->hasPermission(['Director', 'Super Admin']),
-            'can_view_income' => $this->hasPermission(['Director', 'Super Admin']),
-            'can_view_own_income' => $this->hasPermission(['Sales']) && !$this->hasPermission(['Director', 'Super Admin']),
+            'can_view_all_financials' => $this->hasPermission(['Accountant', 'Director', 'Super Admin']),
+            'can_view_income' => $this->hasPermission(['Accountant', 'Director', 'Super Admin']),
+            'can_view_own_income' => $this->hasPermission(['Sales']) && !$this->hasPermission(['Accountant', 'Director', 'Super Admin']),
             'can_view_expense_financials' => $this->hasPermission(['Accountant', 'Director', 'Super Admin']),
             'can_view_expense_operations' => $this->hasPermission(['Sales', 'Technician', 'Manager', 'Accountant', 'Director', 'Super Admin']),
             'can_view_inventory' => $this->hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin']),
             'can_view_inventory_value' => $this->hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin']),
-            'can_view_station_charts' => $this->hasPermission(['Technician', 'Manager', 'Director', 'Super Admin']),
+            'can_view_station_charts' => $this->hasPermission(['Technician', 'Manager', 'Accountant', 'Director', 'Super Admin']),
             'can_view_inventory_charts' => $this->hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin']),
-            'can_view_stations' => $this->hasPermission(['Technician', 'Manager', 'Director', 'Super Admin']),
+            'can_view_stations' => $this->hasPermission(['Technician', 'Manager', 'Accountant', 'Director', 'Super Admin']),
+            'can_view_payroll' => $this->hasPermission(['Accountant', 'Manager', 'Director', 'Super Admin']),
         ];
+    }
+
+    private function getPendingPayrollCount(): int
+    {
+        $this->db->prepare("SHOW TABLES LIKE 'salary_requests'");
+        if (!$this->db->fetch()) {
+            return 0;
+        }
+
+        $this->db->prepare("SELECT COUNT(*) AS cnt FROM salary_requests WHERE status NOT IN ('Paid', 'Rejected')");
+        $row = $this->db->fetch();
+
+        return (int) ($row['cnt'] ?? 0);
     }
 
     private function getRecentIncome(int $limit): array
     {
-        if ($this->hasPermission(['Director', 'Super Admin'])) {
+        if ($this->hasPermission(['Accountant', 'Director', 'Super Admin'])) {
             return $this->incomeModel->getRecent($limit);
         }
 
@@ -320,7 +444,7 @@ class DashboardController extends BaseController
 
     private function getRecentStations(int $limit): array
     {
-        if ($this->hasPermission(['Manager', 'Director', 'Super Admin'])) {
+        if ($this->hasPermission(['Manager', 'Accountant', 'Director', 'Super Admin'])) {
             return $this->stationModel->getRecent($limit);
         }
 
@@ -336,6 +460,73 @@ class DashboardController extends BaseController
         }
 
         return [];
+    }
+
+    private function getRecentActivities(int $limit = 8): array
+    {
+        if (!$this->hasPermission(['Super Admin', 'Director', 'Accountant', 'Manager'])) {
+            return [];
+        }
+
+        $limit = max(1, (int) $limit);
+        $this->db->prepare("SHOW TABLES LIKE 'activity_logs'");
+        if (!$this->db->fetch()) {
+            return [];
+        }
+
+        $this->db->prepare(
+            "SELECT al.action, al.description, al.user_role, al.created_at, u.full_name
+             FROM activity_logs al
+             LEFT JOIN users u ON al.user_id = u.id
+             ORDER BY al.created_at DESC
+             LIMIT {$limit}"
+        );
+
+        return $this->db->fetchAll();
+    }
+
+    private function getReportLinks(): array
+    {
+        $links = [
+            [
+                'title' => 'Income Report',
+                'description' => 'Monthly collections, service type breakdowns, and recorded customer payments.',
+                'icon' => 'fa-sack-dollar',
+                'href' => APP_URL . '/pages/reports.php?start_date=' . date('Y-m-01') . '&end_date=' . date('Y-m-d'),
+            ],
+            [
+                'title' => 'Expense Report',
+                'description' => 'Approval pipeline, processed requests, and paid expense values.',
+                'icon' => 'fa-file-invoice-dollar',
+                'href' => APP_URL . '/pages/reports.php?start_date=' . date('Y-m-01') . '&end_date=' . date('Y-m-d'),
+            ],
+            [
+                'title' => 'Inventory Report',
+                'description' => 'Stock value, quantities, and low stock items ready for export.',
+                'icon' => 'fa-boxes-stacked',
+                'href' => APP_URL . '/pages/reports.php?start_date=' . date('Y-m-01') . '&end_date=' . date('Y-m-d'),
+            ],
+        ];
+
+        if ($this->hasPermission(['Accountant', 'Director', 'Super Admin'])) {
+            $links[] = [
+                'title' => 'Payroll Summary',
+                'description' => 'Salary request approvals, paid requests, and payslip export workflows.',
+                'icon' => 'fa-money-check-dollar',
+                'href' => APP_URL . '/pages/payroll.php',
+            ];
+        }
+
+        if ($this->hasPermission(['Super Admin'])) {
+            $links[] = [
+                'title' => 'Admin History',
+                'description' => 'Review logged actions and operational activity across all users.',
+                'icon' => 'fa-clock-rotate-left',
+                'href' => APP_URL . '/pages/admin_history.php',
+            ];
+        }
+
+        return $links;
     }
 
     private function stationAssignedToExists(): bool
@@ -358,6 +549,280 @@ class DashboardController extends BaseController
         }
 
         return $this->inventoryModel->getLowStock();
+    }
+
+    private function getRoleNotices(array $stats, array $permissions): array
+    {
+        $notices = [];
+        $expenseTable = $this->expenseModel->getTable();
+        $stationTable = $this->stationModel->getTable();
+        $salaryTableExists = $this->tableExists('salary_requests');
+
+        $pushNotice = static function (
+            array &$items,
+            string $key,
+            string $tone,
+            string $icon,
+            string $title,
+            string $message,
+            string $meta,
+            string $href
+        ): void {
+            if (isset($items[$key])) {
+                return;
+            }
+
+            $items[$key] = [
+                'tone' => $tone,
+                'icon' => $icon,
+                'title' => $title,
+                'message' => $message,
+                'meta' => $meta,
+                'href' => $href,
+            ];
+        };
+
+        if ($this->userHasRole(['Manager'])) {
+            $expenseQueue = $this->countRows(
+                "SELECT COUNT(*) AS cnt FROM {$expenseTable} WHERE status = :status",
+                [':status' => 'Pending Manager Approval']
+            );
+            $stationQueue = $this->countRows(
+                "SELECT COUNT(*) AS cnt FROM {$stationTable} WHERE status = :status",
+                [':status' => 'Pending Manager Approval']
+            );
+            $payrollQueue = $salaryTableExists
+                ? $this->countRows(
+                    "SELECT COUNT(*) AS cnt FROM salary_requests WHERE status = :status",
+                    [':status' => 'Pending Manager Approval']
+                )
+                : 0;
+            $totalQueue = $expenseQueue + $stationQueue + $payrollQueue;
+
+            if ($totalQueue > 0) {
+                $pushNotice(
+                    $notices,
+                    'manager-queue',
+                    'orange',
+                    'fa-user-check',
+                    'Manager approvals waiting',
+                    "You have {$totalQueue} manager approvals waiting.",
+                    'Expenses ' . $expenseQueue . ' • Stations ' . $stationQueue . ' • Payroll ' . $payrollQueue,
+                    APP_URL . '/pages/view_expense_requests.php'
+                );
+            }
+        }
+
+        if ($this->userHasRole(['Director'])) {
+            $expenseQueue = $this->countRows(
+                "SELECT COUNT(*) AS cnt FROM {$expenseTable} WHERE status = :status",
+                [':status' => 'Pending Director Approval']
+            );
+            $stationQueue = $this->countRows(
+                "SELECT COUNT(*) AS cnt FROM {$stationTable} WHERE status = :status",
+                [':status' => 'Pending Director Approval']
+            );
+            $payrollQueue = $salaryTableExists
+                ? $this->countRows(
+                    "SELECT COUNT(*) AS cnt FROM salary_requests WHERE status = :status",
+                    [':status' => 'Pending Director Approval']
+                )
+                : 0;
+            $totalQueue = $expenseQueue + $stationQueue + $payrollQueue;
+
+            if ($totalQueue > 0) {
+                $pushNotice(
+                    $notices,
+                    'director-queue',
+                    'indigo',
+                    'fa-user-tie',
+                    'Director approvals waiting',
+                    "You have {$totalQueue} director approvals waiting.",
+                    'Expenses ' . $expenseQueue . ' • Stations ' . $stationQueue . ' • Payroll ' . $payrollQueue,
+                    APP_URL . '/pages/stations.php#station-setup-requests'
+                );
+            }
+        }
+
+        if ($this->userHasRole(['Accountant'])) {
+            $expenseQueue = $this->countRows(
+                "SELECT COUNT(*) AS cnt FROM {$expenseTable} WHERE status = :status",
+                [':status' => 'Pending Accountant Processing']
+            );
+            $stationQueue = $this->countRows(
+                "SELECT COUNT(*) AS cnt FROM {$stationTable} WHERE status = :status",
+                [':status' => 'Awaiting Accountant Approval']
+            );
+            $payrollQueue = $salaryTableExists
+                ? $this->countRows(
+                    "SELECT COUNT(*) AS cnt FROM salary_requests WHERE status = :status",
+                    [':status' => 'Pending Accountant Final Approval']
+                )
+                : 0;
+            $totalQueue = $expenseQueue + $stationQueue + $payrollQueue;
+
+            if ($totalQueue > 0) {
+                $pushNotice(
+                    $notices,
+                    'accountant-queue',
+                    'cyan',
+                    'fa-wallet',
+                    'Accountant processing queue',
+                    "You have {$totalQueue} accountant actions ready for processing.",
+                    'Expenses ' . $expenseQueue . ' • Stations ' . $stationQueue . ' • Payroll ' . $payrollQueue,
+                    APP_URL . '/pages/payroll.php'
+                );
+            }
+        }
+
+        if ($this->userHasRole(['Store Keeper'])) {
+            $storeQueue = $this->countRows(
+                "SELECT COUNT(*) AS cnt FROM {$stationTable} WHERE status = :status",
+                [':status' => 'Pending Store Keeper Approval']
+            );
+
+            if ($storeQueue > 0) {
+                $pushNotice(
+                    $notices,
+                    'store-queue',
+                    'blue',
+                    'fa-warehouse',
+                    'Store release approvals pending',
+                    "{$storeQueue} station issue requests are waiting for store release.",
+                    'Open the station workflow and issue or skip requested inventory items.',
+                    APP_URL . '/pages/stations.php#station-setup-requests'
+                );
+            }
+        }
+
+        if ($this->userHasRole(['Store Keeper', 'Manager', 'Director', 'Super Admin']) && (int) ($stats['low_stock'] ?? 0) > 0) {
+            $lowStockCount = (int) ($stats['low_stock'] ?? 0);
+            $pushNotice(
+                $notices,
+                'low-stock',
+                'amber',
+                'fa-triangle-exclamation',
+                'Low stock needs attention',
+                "{$lowStockCount} low stock items need restock now.",
+                'Review depleted items before approvals or field work are delayed.',
+                APP_URL . '/pages/low_stock_alerts.php'
+            );
+        }
+
+        if ($this->userHasRole(['Sales', 'Technician'])) {
+            $receiptQueue = $this->countRows(
+                "SELECT COUNT(*) AS cnt FROM {$expenseTable} WHERE requested_by = :user_id AND status = :status",
+                [
+                    ':user_id' => (int) ($this->user['id'] ?? 0),
+                    ':status' => 'Waiting for Receipt',
+                ]
+            );
+
+            if ($receiptQueue > 0) {
+                $pushNotice(
+                    $notices,
+                    'receipt-upload',
+                    'rose',
+                    'fa-file-arrow-up',
+                    'Receipts still missing',
+                    "{$receiptQueue} paid expense requests still need receipt upload.",
+                    'Upload receipts quickly so accountant records stay complete.',
+                    APP_URL . '/pages/view_expense_requests.php'
+                );
+            }
+        }
+
+        if ($this->userHasRole(['Technician'])) {
+            if ($this->stationAssignedToExists()) {
+                $installQueue = $this->countRows(
+                    "SELECT COUNT(*) AS cnt
+                     FROM {$stationTable}
+                     WHERE (requested_by = :requested_user OR assigned_to = :assigned_user)
+                       AND status IN ('Ready for Installation', 'Equipment Issued', 'Installation in Progress')",
+                    [
+                        ':requested_user' => (int) ($this->user['id'] ?? 0),
+                        ':assigned_user' => (int) ($this->user['id'] ?? 0),
+                    ]
+                );
+            } else {
+                $installQueue = $this->countRows(
+                    "SELECT COUNT(*) AS cnt
+                     FROM {$stationTable}
+                     WHERE requested_by = :user_id
+                       AND status IN ('Ready for Installation', 'Equipment Issued', 'Installation in Progress')",
+                    [':user_id' => (int) ($this->user['id'] ?? 0)]
+                );
+            }
+
+            if ($installQueue > 0) {
+                $pushNotice(
+                    $notices,
+                    'technician-install',
+                    'indigo',
+                    'fa-screwdriver-wrench',
+                    'Station progress updates due',
+                    "{$installQueue} station jobs need progress updates or completion.",
+                    'Open active installs and keep workflow status current from the field.',
+                    APP_URL . '/pages/stations.php#station-setup-requests'
+                );
+            }
+        }
+
+        if (empty($notices) && (
+            !empty($permissions['can_view_expense_operations'])
+            || !empty($permissions['can_view_stations'])
+            || !empty($permissions['can_view_inventory'])
+            || !empty($permissions['can_view_payroll'])
+        )) {
+            $pushNotice(
+                $notices,
+                'clear',
+                'emerald',
+                'fa-circle-check',
+                'Queues are under control',
+                'No urgent role-specific approvals are waiting right now.',
+                'Use the quick actions below for routine follow-up and reporting.',
+                APP_URL . '/dashboard.php'
+            );
+        }
+
+        return array_values(array_slice($notices, 0, 4));
+    }
+
+    private function countRows(string $sql, array $bindings = []): int
+    {
+        $this->db->prepare($sql);
+        foreach ($bindings as $parameter => $value) {
+            $this->db->bind($parameter, $value);
+        }
+
+        $row = $this->db->fetch();
+
+        return (int) ($row['cnt'] ?? 0);
+    }
+
+    private function tableExists(string $table): bool
+    {
+        $table = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
+        if ($table === '') {
+            return false;
+        }
+
+        $this->db->prepare("SHOW TABLES LIKE '{$table}'");
+
+        return (bool) $this->db->fetch();
+    }
+
+    private function userHasRole(array $roles): bool
+    {
+        $userRoles = array_map('strtolower', array_filter(array_map('trim', explode(',', (string) ($this->user['role'] ?? '')))));
+        foreach ($roles as $role) {
+            if (in_array(strtolower($role), $userRoles, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

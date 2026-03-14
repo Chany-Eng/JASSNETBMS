@@ -73,6 +73,7 @@ function hasPermission($required_roles) {
 
 // SMS configuration and helper - using professional gateway wrapper
 require_once __DIR__ . '/jassnet_sms.php';
+require_once __DIR__ . '/jassnet_whatsapp.php';
 
 /**
  * Send an SMS via the JASSNET gateway.
@@ -87,6 +88,162 @@ function jassnet_sms($phone, $message) {
         return null;
     }
     return $smsSender->sendSMS($phone, $message, SENDER_ID);
+}
+
+function jassnet_whatsapp($phone, $message) {
+    global $whatsAppSender;
+    if (!isset($whatsAppSender)) {
+        return null;
+    }
+
+    return $whatsAppSender->sendTextMessage((string) $phone, (string) $message);
+}
+
+function appNormalizeSmsPhone(string $phone): string
+{
+    $digits = preg_replace('/\D+/', '', trim($phone));
+    if ($digits === null || $digits === '') {
+        return '';
+    }
+
+    if (str_starts_with($digits, '255') && strlen($digits) === 12) {
+        return $digits;
+    }
+
+    if (str_starts_with($digits, '0') && strlen($digits) === 10) {
+        return '255' . substr($digits, 1);
+    }
+
+    if (strlen($digits) === 9) {
+        return '255' . $digits;
+    }
+
+    return '';
+}
+
+function appSendTextChannelsToPhone(string $phone, string $message): array
+{
+    $normalizedPhone = appNormalizeSmsPhone($phone);
+    $normalizedMessage = trim($message);
+    if ($normalizedPhone === '' || $normalizedMessage === '') {
+        return [];
+    }
+
+    $results = [];
+    $smsResponse = jassnet_sms($normalizedPhone, $normalizedMessage);
+    if ($smsResponse !== null) {
+        $results['sms'] = $smsResponse;
+    }
+
+    $whatsAppResponse = jassnet_whatsapp($normalizedPhone, $normalizedMessage);
+    if ($whatsAppResponse !== null && (($whatsAppResponse['error'] ?? '') !== 'whatsapp_not_configured' || !empty($whatsAppResponse['success']))) {
+        $results['whatsapp'] = $whatsAppResponse;
+    }
+
+    return $results;
+}
+
+function appSendSmsToPhone(string $phone, string $message)
+{
+    $results = appSendTextChannelsToPhone($phone, $message);
+    if ($results === []) {
+        return null;
+    }
+
+    return $results['sms'] ?? $results['whatsapp'] ?? null;
+}
+
+function appSendWhatsAppToPhone(string $phone, string $message)
+{
+    $results = appSendTextChannelsToPhone($phone, $message);
+    return $results['whatsapp'] ?? null;
+}
+
+function appSendSmsToUser(array $user, string $message)
+{
+    return appSendSmsToPhone((string) ($user['phone'] ?? ''), $message);
+}
+
+function appSendWhatsAppToUser(array $user, string $message)
+{
+    return appSendWhatsAppToPhone((string) ($user['phone'] ?? ''), $message);
+}
+
+function appGetUsersByRoles(mysqli $conn, array $roles): array
+{
+    $roles = array_values(array_unique(array_filter(array_map('trim', $roles))));
+    if (empty($roles)) {
+        return [];
+    }
+
+    $columns = ['id', 'full_name', 'username', 'role', 'phone'];
+    if (dbColumnExists($conn, 'users', 'status')) {
+        $columns[] = 'status';
+    }
+    if (dbColumnExists($conn, 'users', 'is_active')) {
+        $columns[] = 'is_active';
+    }
+
+    $result = $conn->query('SELECT ' . implode(', ', $columns) . ' FROM users ORDER BY full_name ASC');
+    if (!$result) {
+        return [];
+    }
+
+    $matched = [];
+    $wanted = array_map('strtolower', $roles);
+    while ($row = $result->fetch_assoc()) {
+        $status = strtolower(trim((string) ($row['status'] ?? 'active')));
+        $isActive = array_key_exists('is_active', $row) ? (int) $row['is_active'] === 1 : $status !== 'inactive';
+        if (!$isActive) {
+            continue;
+        }
+
+        $userRoles = array_map('strtolower', array_map('trim', explode(',', (string) ($row['role'] ?? ''))));
+        foreach ($wanted as $role) {
+            if (in_array($role, $userRoles, true)) {
+                $matched[(int) $row['id']] = $row;
+                break;
+            }
+        }
+    }
+
+    return array_values($matched);
+}
+
+function appSendSmsToRoles(mysqli $conn, array $roles, string $message, array $excludeUserIds = []): array
+{
+    $sentTo = [];
+    $users = appGetUsersByRoles($conn, $roles);
+    foreach ($users as $user) {
+        $userId = (int) ($user['id'] ?? 0);
+        if ($userId > 0 && in_array($userId, $excludeUserIds, true)) {
+            continue;
+        }
+
+        if (appSendSmsToUser($user, $message) !== null) {
+            $sentTo[] = $userId;
+        }
+    }
+
+    return $sentTo;
+}
+
+function appSendWhatsAppToRoles(mysqli $conn, array $roles, string $message, array $excludeUserIds = []): array
+{
+    $sentTo = [];
+    $users = appGetUsersByRoles($conn, $roles);
+    foreach ($users as $user) {
+        $userId = (int) ($user['id'] ?? 0);
+        if ($userId > 0 && in_array($userId, $excludeUserIds, true)) {
+            continue;
+        }
+
+        if (appSendWhatsAppToUser($user, $message) !== null) {
+            $sentTo[] = $userId;
+        }
+    }
+
+    return $sentTo;
 }
 
 // Function to redirect if not authorized
@@ -116,6 +273,38 @@ function dbTableExists(mysqli $conn, string $tableName): bool
     $safeTable = $conn->real_escape_string($tableName);
     $result = $conn->query("SHOW TABLES LIKE '{$safeTable}'");
     return $result instanceof mysqli_result && $result->num_rows > 0;
+}
+
+function ensureUserIdentitySchema(mysqli $conn): void
+{
+    if (!dbTableExists($conn, 'users')) {
+        return;
+    }
+
+    if (!dbColumnExists($conn, 'users', 'first_name')) {
+        $conn->query("ALTER TABLE users ADD COLUMN first_name VARCHAR(100) NULL AFTER role");
+    }
+
+    if (!dbColumnExists($conn, 'users', 'middle_name')) {
+        $conn->query("ALTER TABLE users ADD COLUMN middle_name VARCHAR(100) NULL AFTER first_name");
+    }
+
+    if (!dbColumnExists($conn, 'users', 'last_name')) {
+        $conn->query("ALTER TABLE users ADD COLUMN last_name VARCHAR(100) NULL AFTER middle_name");
+    }
+
+    if (!dbColumnExists($conn, 'users', 'id_number')) {
+        $conn->query("ALTER TABLE users ADD COLUMN id_number VARCHAR(100) NULL AFTER employee_id");
+    }
+
+    if (!dbColumnExists($conn, 'users', 'location')) {
+        $afterColumn = dbColumnExists($conn, 'users', 'id_number') ? 'id_number' : 'employee_id';
+        $conn->query("ALTER TABLE users ADD COLUMN location VARCHAR(150) NULL AFTER {$afterColumn}");
+
+        if (dbColumnExists($conn, 'users', 'address')) {
+            $conn->query("UPDATE users SET location = NULLIF(TRIM(address), '') WHERE (location IS NULL OR location = '') AND address IS NOT NULL AND TRIM(address) <> ''");
+        }
+    }
 }
 
 function ensureActivityLogSchema(mysqli $conn): void
@@ -357,6 +546,7 @@ function getUserActionNotifications(mysqli $conn): array
         $items[] = [
             'type' => $type,
             'record_id' => $recordId,
+            'status_key' => $statusKey,
             'notification_key' => $notificationKey,
             'title' => $title,
             'description' => $description,
@@ -365,6 +555,39 @@ function getUserActionNotifications(mysqli $conn): array
             'is_read' => (bool) ($readMap[$notificationKey] ?? false),
         ];
     };
+
+    $rolePriorityMap = [];
+    $roleList = array_map('trim', explode(',', (string) ($_SESSION['role'] ?? '')));
+    $normalizedRoles = array_map('strtolower', array_filter($roleList));
+
+    $applyPriority = static function (array &$map, array $keys, int $priority) {
+        foreach ($keys as $key) {
+            if (!array_key_exists($key, $map) || $priority < $map[$key]) {
+                $map[$key] = $priority;
+            }
+        }
+    };
+
+    if (in_array('manager', $normalizedRoles, true)) {
+        $applyPriority($rolePriorityMap, ['pending-manager-approval'], 0);
+        $applyPriority($rolePriorityMap, ['approved', 'installation-in-progress'], 20);
+    }
+    if (in_array('director', $normalizedRoles, true)) {
+        $applyPriority($rolePriorityMap, ['pending-director-approval'], 0);
+    }
+    if (in_array('accountant', $normalizedRoles, true)) {
+        $applyPriority($rolePriorityMap, ['pending-accountant-processing', 'awaiting-accountant-approval', 'pending-accountant-final-approval'], 0);
+        $applyPriority($rolePriorityMap, ['waiting-for-receipt'], 15);
+    }
+    if (in_array('store keeper', $normalizedRoles, true)) {
+        $applyPriority($rolePriorityMap, ['pending-store-keeper-approval'], 0);
+    }
+    if (in_array('technician', $normalizedRoles, true)) {
+        $applyPriority($rolePriorityMap, ['approved', 'installation-in-progress'], 0);
+    }
+    if (in_array('sales', $normalizedRoles, true)) {
+        $applyPriority($rolePriorityMap, ['waiting-for-receipt'], 0);
+    }
 
     if (dbTableExists($conn, 'expense_requests')) {
         if (hasPermission(['Manager'])) {
@@ -465,7 +688,18 @@ function getUserActionNotifications(mysqli $conn): array
         }
     }
 
-    usort($notifications, static function ($left, $right) {
+    usort($notifications, static function ($left, $right) use ($rolePriorityMap) {
+        $leftPriority = $rolePriorityMap[(string) ($left['status_key'] ?? '')] ?? 50;
+        $rightPriority = $rolePriorityMap[(string) ($right['status_key'] ?? '')] ?? 50;
+
+        if ($leftPriority !== $rightPriority) {
+            return $leftPriority <=> $rightPriority;
+        }
+
+        if ((bool) ($left['is_read'] ?? false) !== (bool) ($right['is_read'] ?? false)) {
+            return ((bool) ($left['is_read'] ?? false)) <=> ((bool) ($right['is_read'] ?? false));
+        }
+
         return strcmp((string) ($right['date_value'] ?? ''), (string) ($left['date_value'] ?? ''));
     });
 
@@ -526,6 +760,68 @@ function formatSuccessMessage($message, $user = null) {
     }
 
     return $message . ' By: ' . $actor;
+}
+
+function renderPageHero(array $config = []): string
+{
+    $eyebrow = trim((string) ($config['eyebrow'] ?? 'JASSNET Workspace'));
+    $title = trim((string) ($config['title'] ?? 'Page Overview'));
+    $subtitle = trim((string) ($config['subtitle'] ?? ''));
+    $icon = trim((string) ($config['icon'] ?? 'fa-layer-group'));
+    $badges = is_array($config['badges'] ?? null) ? $config['badges'] : [];
+    $actions = is_array($config['actions'] ?? null) ? $config['actions'] : [];
+    $stats = is_array($config['stats'] ?? null) ? $config['stats'] : [];
+
+    ob_start();
+    ?>
+    <section class="page-hero mb-4">
+        <div class="page-hero-surface">
+            <div class="row g-4 align-items-center">
+                <div class="col-xl-8">
+                    <div class="page-hero-copy">
+                        <div class="page-hero-eyebrow"><?php echo htmlspecialchars($eyebrow); ?></div>
+                        <h2 class="page-hero-title"><i class="fas <?php echo htmlspecialchars($icon); ?>"></i> <?php echo htmlspecialchars($title); ?></h2>
+                        <?php if ($subtitle !== ''): ?>
+                            <p class="page-hero-subtitle mb-0"><?php echo htmlspecialchars($subtitle); ?></p>
+                        <?php endif; ?>
+                        <?php if (!empty($badges)): ?>
+                            <div class="page-hero-badges">
+                                <?php foreach ($badges as $badge): ?>
+                                    <span class="page-hero-badge"><?php echo htmlspecialchars((string) $badge); ?></span>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php if (!empty($actions)): ?>
+                    <div class="col-xl-4">
+                        <div class="page-hero-actions">
+                            <?php foreach ($actions as $actionHtml): ?>
+                                <?php echo $actionHtml; ?>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+            <?php if (!empty($stats)): ?>
+                <div class="row g-3 page-hero-stats">
+                    <?php foreach ($stats as $stat): ?>
+                        <div class="col-xl-3 col-md-6">
+                            <div class="page-hero-stat <?php echo htmlspecialchars((string) ($stat['tone'] ?? 'default')); ?>">
+                                <div class="page-hero-stat-label"><?php echo htmlspecialchars((string) ($stat['label'] ?? 'Metric')); ?></div>
+                                <div class="page-hero-stat-value"><?php echo htmlspecialchars((string) ($stat['value'] ?? '0')); ?></div>
+                                <?php if (!empty($stat['hint'])): ?>
+                                    <div class="page-hero-stat-hint"><?php echo htmlspecialchars((string) $stat['hint']); ?></div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+    </section>
+    <?php
+    return (string) ob_get_clean();
 }
 
 // Function to upload file

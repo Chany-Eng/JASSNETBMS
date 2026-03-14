@@ -43,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt->bind_param("ssssdssssi", $date, $customer_name, $phone, $service_type, $amount, $payment_method, $transaction_reference, $notes, $receipt_file, $_SESSION['user_id']);
                 
                 if ($stmt->execute()) {
+                    appLogActivity($conn, 'CREATE_INCOME', 'Added income record for ' . $customer_name, 'income', (int) $stmt->insert_id);
                     $_SESSION['success_message'] = 'Income record added successfully';
                     header("Location: add_income.php");
                     exit();

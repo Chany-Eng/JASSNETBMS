@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/snippe_payouts.php';
+
 function payrollEnsureSchema(mysqli $conn): void
 {
     snippeEnsureUserPayoutFields($conn);
@@ -43,13 +45,24 @@ function payrollEnsureSchema(mysqli $conn): void
 
 function payrollPayoutLabel(string $channel): string
 {
-    return strtolower(trim($channel)) === 'bank' ? 'Bank Transfer' : 'Mobile Money';
+    $normalized = strtolower(trim($channel));
+    if ($normalized === 'bank') {
+        return 'Bank Transfer';
+    }
+    if ($normalized === 'cash') {
+        return 'Cash';
+    }
+    return 'Mobile Money';
 }
 
-function payrollResolvePayoutDestination(array $user): string
+function payrollResolvePayoutDestination(array $user, ?string $channel = null): string
 {
-    $channel = strtolower(trim((string) ($user['preferred_payout_channel'] ?? 'mobile')));
-    if ($channel === 'bank') {
+    $resolvedChannel = strtolower(trim((string) ($channel ?? ($user['preferred_payout_channel'] ?? 'mobile'))));
+    if ($resolvedChannel === 'cash') {
+        return 'Cash Payment';
+    }
+
+    if ($resolvedChannel === 'bank') {
         $bankLabel = trim((string) ($user['bank_name'] ?? ''));
         $bankAccount = trim((string) ($user['bank_account_number'] ?? ''));
         if ($bankLabel !== '' || $bankAccount !== '') {
@@ -125,30 +138,35 @@ function payrollRenderPayslipPdf(array $row): void
         return "BT /{$font} {$size} Tf {$x} {$y} Td (" . $pdfSafe($text) . ") Tj ET\n";
     };
 
-    $lines = [
-        'JASSNET Salary Payslip',
-        'Employee: ' . ($row['employee_name'] ?? '-'),
-        'Month: ' . ($row['salary_month_label'] ?? '-'),
-        'Payment Date: ' . ($row['paid_date_label'] ?? '-'),
-        'Day: ' . ($row['paid_day_label'] ?? '-'),
-        'Basic Salary: Tshs. ' . number_format((float) ($row['basic_salary'] ?? 0), 2),
-        'Bonus: Tshs. ' . number_format((float) ($row['bonus_amount'] ?? 0), 2),
-        'Deductions: Tshs. ' . number_format((float) ($row['deduction_amount'] ?? 0), 2),
-        'Net Salary Paid: Tshs. ' . number_format((float) ($row['net_salary'] ?? 0), 2),
-        'Payment Method: ' . ($row['payout_method_label'] ?? '-'),
-        'Destination: ' . ($row['payout_destination'] ?? '-'),
-        'Reference: ' . (($row['payment_reference'] ?? '') !== '' ? $row['payment_reference'] : '-'),
-        'Accountant Comment: ' . (($row['accountant_final_comment'] ?? '') !== '' ? $row['accountant_final_comment'] : '-'),
-        'Accountant Signature: ' . (($row['accountant_signature'] ?? '') !== '' ? $row['accountant_signature'] : '________________'),
-    ];
+    $drawFilledRect = static function ($x, $y, $w, $h, $r, $g, $b): string {
+        return sprintf("%.3F %.3F %.3F rg %.2F %.2F %.2F %.2F re f\n", $r, $g, $b, $x, $y, $w, $h);
+    };
+
+    $drawLine = static function ($x1, $y1, $x2, $y2): string {
+        return sprintf("0.84 0.88 0.92 RG %.2F %.2F m %.2F %.2F l S\n", $x1, $y1, $x2, $y2);
+    };
 
     $stream = '';
-    $y = 800;
-    foreach ($lines as $index => $line) {
-        $fontSize = $index === 0 ? 16 : 11;
-        $stream .= $drawText('F1', $fontSize, 40, $y, $line);
-        $y -= $index === 0 ? 28 : 18;
-    }
+    $stream .= $drawFilledRect(0, 770, 612, 72, 0.11, 0.31, 0.60);
+    $stream .= "1 1 1 rg\n";
+    $stream .= $drawText('F1', 18, 40, 812, 'ERMS Salary Payslip');
+    $stream .= $drawText('F1', 10, 40, 794, 'Payroll Month: ' . ($row['salary_month_label'] ?? '-'));
+    $stream .= $drawText('F1', 10, 40, 780, 'Payment Date: ' . ($row['paid_date_label'] ?? '-'));
+    $stream .= "0.13 0.18 0.28 rg\n";
+    $stream .= $drawText('F1', 11, 40, 742, 'Employee: ' . ($row['employee_name'] ?? '-'));
+    $stream .= $drawText('F1', 11, 320, 742, 'Day: ' . ($row['paid_day_label'] ?? '-'));
+    $stream .= $drawText('F1', 11, 40, 722, 'Payout Method: ' . ($row['payout_method_label'] ?? '-'));
+    $stream .= $drawText('F1', 11, 320, 722, 'Reference: ' . (($row['payment_reference'] ?? '') !== '' ? $row['payment_reference'] : '-'));
+    $stream .= $drawText('F1', 11, 40, 702, 'Destination: ' . ($row['payout_destination'] ?? '-'));
+    $stream .= $drawLine(36, 688, 576, 688);
+    $stream .= $drawText('F1', 11, 40, 662, 'Basic Salary: Tshs. ' . number_format((float) ($row['basic_salary'] ?? 0), 2));
+    $stream .= $drawText('F1', 11, 40, 642, 'Bonus: Tshs. ' . number_format((float) ($row['bonus_amount'] ?? 0), 2));
+    $stream .= $drawText('F1', 11, 40, 622, 'Deductions: Tshs. ' . number_format((float) ($row['deduction_amount'] ?? 0), 2));
+    $stream .= $drawText('F1', 13, 40, 594, 'Net Salary Paid: Tshs. ' . number_format((float) ($row['net_salary'] ?? 0), 2));
+    $stream .= $drawLine(36, 576, 576, 576);
+    $stream .= $drawText('F1', 10, 40, 548, 'Accountant Comment: ' . (($row['accountant_final_comment'] ?? '') !== '' ? $row['accountant_final_comment'] : '-'));
+    $stream .= $drawText('F1', 10, 40, 516, 'Accountant Signature: ' . (($row['accountant_signature'] ?? '') !== '' ? $row['accountant_signature'] : '________________'));
+    $stream .= $drawText('F1', 9, 40, 486, 'Generated by ERMS payroll workflow.');
 
     $objects = [];
     $offsets = [];
@@ -194,7 +212,7 @@ function payrollRenderBatchPdf(array $rows): void
     };
 
     $lines = [
-        'JASSNET Salary Payment Report',
+        'ERMS Salary Payment Report',
         'Generated: ' . date('d M Y H:i'),
         'Employee | Month | Net Salary | Method | Destination | Paid Date',
         str_repeat('-', 110),

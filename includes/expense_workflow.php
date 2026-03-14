@@ -10,6 +10,7 @@ function expenseEnsureWorkflowSchema(mysqli $conn): void
         'manager_comment' => "ALTER TABLE expense_requests ADD COLUMN manager_comment TEXT NULL AFTER manager_approved",
         'director_comment' => "ALTER TABLE expense_requests ADD COLUMN director_comment TEXT NULL AFTER director_approved",
         'accountant_comment' => "ALTER TABLE expense_requests ADD COLUMN accountant_comment TEXT NULL AFTER accountant_processed",
+        'rejection_comment' => "ALTER TABLE expense_requests ADD COLUMN rejection_comment TEXT NULL AFTER accountant_comment",
     ];
 
     foreach ($requestColumns as $column => $sql) {

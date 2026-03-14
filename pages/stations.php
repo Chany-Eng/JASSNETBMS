@@ -29,6 +29,54 @@ function stationTableExists(mysqli $conn, string $tableName): bool
     return $result instanceof mysqli_result && $result->num_rows > 0;
 }
 
+function stationFetchWorkflowRequest(mysqli $conn, int $requestId): ?array
+{
+    $stmt = $conn->prepare("SELECT sr.*, u.full_name AS requested_by_name, u.phone AS requested_by_phone FROM station_requests sr JOIN users u ON sr.requested_by = u.id WHERE sr.id = ? LIMIT 1");
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param('i', $requestId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc() ?: null;
+}
+
+function stationNotifyWorkflowStage(mysqli $conn, array $row, string $stage, string $comment = ''): void
+{
+    $requestId = (int) ($row['id'] ?? 0);
+    $stationName = trim((string) ($row['station_name'] ?? 'Station'));
+    $requesterId = (int) ($row['requested_by'] ?? 0);
+    $requesterName = trim((string) ($row['requested_by_name'] ?? 'Requester'));
+    $phone = (string) ($row['requested_by_phone'] ?? '');
+
+    if ($stage === 'submit') {
+        appSendSmsToPhone($phone, 'ERMS: Station request #' . $requestId . ' ya ' . $stationName . ' imepokelewa. Inasubiri Manager approval.');
+        appSendSmsToRoles($conn, ['Manager'], 'ERMS: Station request #' . $requestId . ' ya ' . $stationName . ' kutoka ' . $requesterName . ' inasubiri approval yako.', [$requesterId]);
+        return;
+    }
+
+    if ($stage === 'manager_approved') {
+        appSendSmsToPhone($phone, 'ERMS: Station request #' . $requestId . ' ya ' . $stationName . ' imekubaliwa na Manager. Inasubiri Director approval.');
+        appSendSmsToRoles($conn, ['Director'], 'ERMS: Station request #' . $requestId . ' ya ' . $stationName . ' inasubiri Director approval yako.', [$requesterId]);
+        return;
+    }
+
+    if ($stage === 'director_approved') {
+        appSendSmsToPhone($phone, 'ERMS: Station request #' . $requestId . ' ya ' . $stationName . ' imekubaliwa na Director. Endelea na costs/receipts au accountant processing.');
+        appSendSmsToRoles($conn, ['Accountant'], 'ERMS: Station request #' . $requestId . ' ya ' . $stationName . ' imefika stage ya accountant.', [$requesterId]);
+        return;
+    }
+
+    if ($stage === 'rejected') {
+        appSendSmsToPhone($phone, 'ERMS: Station request #' . $requestId . ' ya ' . $stationName . ' imekataliwa. Sababu: ' . ($comment !== '' ? $comment : '-'));
+        return;
+    }
+
+    if ($stage === 'accountant_update') {
+        appSendSmsToPhone($phone, 'ERMS: Station request #' . $requestId . ' ya ' . $stationName . ' imepitiwa na Accountant. ' . ($comment !== '' ? $comment : 'Kagua status mpya kwenye mfumo.'));
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' && hasPermission(['Accountant', 'Super Admin'])) {
     snippeRefreshPendingPayouts($conn, 5);
 }
@@ -69,6 +117,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             if ($stmt->execute()) {
                 $station_id = $conn->insert_id;
+                appLogActivity($conn, 'CREATE_STATION_REQUEST', 'Submitted station request for ' . $station_name, 'station_requests', $station_id);
+                $requestRow = stationFetchWorkflowRequest($conn, $station_id);
+                if ($requestRow) {
+                    stationNotifyWorkflowStage($conn, $requestRow, 'submit');
+                }
                 
                 // Add equipment requirements
                 if (isset($_POST['equipment_name'])) {
@@ -121,6 +174,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt = $conn->prepare("UPDATE station_requests SET status = 'Pending Director Approval', manager_approved_by = ?, manager_approved_at = NOW(), manager_comment = ? WHERE id = ? AND status = 'Pending Manager Approval'");
                 $stmt->bind_param("isi", $_SESSION['user_id'], $manager_comment, $request_id);
                 $stmt->execute();
+                appLogActivity($conn, 'APPROVE_STATION_MANAGER', 'Manager approved station request #' . $request_id, 'station_requests', $request_id);
+                $requestRow = stationFetchWorkflowRequest($conn, $request_id);
+                if ($requestRow) {
+                    stationNotifyWorkflowStage($conn, $requestRow, 'manager_approved', $manager_comment);
+                }
                 $message = 'Station request approved by manager. Waiting for Director approval.';
             }
         }
@@ -129,10 +187,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $error = 'You are not authorized to reject station requests';
         } else {
             $request_id = intval($_POST['request_id']);
-            $stmt = $conn->prepare("UPDATE station_requests SET status = 'Rejected', manager_approved_by = ?, manager_approved_at = NOW() WHERE id = ? AND status = 'Pending Manager Approval'");
-            $stmt->bind_param("ii", $_SESSION['user_id'], $request_id);
-            $stmt->execute();
-            $message = 'Station request rejected by manager.';
+            $reason = trim(sanitize($_POST['manager_rejection_reason'] ?? ''));
+            if ($reason === '') {
+                $error = 'Manager rejection comment is required';
+            } else {
+                $stmt = $conn->prepare("UPDATE station_requests SET status = 'Rejected', manager_approved_by = ?, manager_approved_at = NOW(), manager_comment = ? WHERE id = ? AND status = 'Pending Manager Approval'");
+                $stmt->bind_param("isi", $_SESSION['user_id'], $reason, $request_id);
+                $stmt->execute();
+                appLogActivity($conn, 'REJECT_STATION_MANAGER', 'Manager rejected station request #' . $request_id . ' with reason: ' . $reason, 'station_requests', $request_id);
+                $requestRow = stationFetchWorkflowRequest($conn, $request_id);
+                if ($requestRow) {
+                    stationNotifyWorkflowStage($conn, $requestRow, 'rejected', 'Manager: ' . $reason);
+                }
+                $message = 'Station request rejected by manager.';
+            }
         }
     } elseif (isset($_POST['approve_director'])) {
         if (!hasPermission(['Director', 'Super Admin'])) {
@@ -146,6 +214,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt = $conn->prepare("UPDATE station_requests SET status = 'Approved', approved_by = ?, director_approved_by = ?, director_approved_at = NOW(), director_comment = ? WHERE id = ? AND status = 'Pending Director Approval'");
                 $stmt->bind_param("iisi", $_SESSION['user_id'], $_SESSION['user_id'], $director_comment, $request_id);
                 $stmt->execute();
+                appLogActivity($conn, 'APPROVE_STATION_DIRECTOR', 'Director approved station request #' . $request_id, 'station_requests', $request_id);
+                $requestRow = stationFetchWorkflowRequest($conn, $request_id);
+                if ($requestRow) {
+                    stationNotifyWorkflowStage($conn, $requestRow, 'director_approved', $director_comment);
+                }
                 $message = 'Station request approved by director. Requester can now submit actual costs and receipts.';
             }
         }
@@ -154,10 +227,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $error = 'You are not authorized to reject station requests';
         } else {
             $request_id = intval($_POST['request_id']);
-            $stmt = $conn->prepare("UPDATE station_requests SET status = 'Rejected', director_approved_by = ?, director_approved_at = NOW() WHERE id = ? AND status = 'Pending Director Approval'");
-            $stmt->bind_param("ii", $_SESSION['user_id'], $request_id);
-            $stmt->execute();
-            $message = 'Station request rejected by director.';
+            $reason = trim(sanitize($_POST['director_rejection_reason'] ?? ''));
+            if ($reason === '') {
+                $error = 'Director rejection comment is required';
+            } else {
+                $stmt = $conn->prepare("UPDATE station_requests SET status = 'Rejected', director_approved_by = ?, director_approved_at = NOW(), director_comment = ? WHERE id = ? AND status = 'Pending Director Approval'");
+                $stmt->bind_param("isi", $_SESSION['user_id'], $reason, $request_id);
+                $stmt->execute();
+                appLogActivity($conn, 'REJECT_STATION_DIRECTOR', 'Director rejected station request #' . $request_id . ' with reason: ' . $reason, 'station_requests', $request_id);
+                $requestRow = stationFetchWorkflowRequest($conn, $request_id);
+                if ($requestRow) {
+                    stationNotifyWorkflowStage($conn, $requestRow, 'rejected', 'Director: ' . $reason);
+                }
+                $message = 'Station request rejected by director.';
+            }
         }
     } elseif (isset($_POST['submit_costs'])) {
         $request_id = intval($_POST['request_id']);
@@ -197,6 +280,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 if ($stmt->execute()) {
                     // Update station status to Awaiting Accountant Approval
                     $conn->query("UPDATE station_requests SET status = 'Awaiting Accountant Approval' WHERE id = $request_id");
+                    appLogActivity($conn, 'SUBMIT_STATION_COSTS', 'Submitted actual costs for station request #' . $request_id, 'station_requests', $request_id);
                     $message = 'Receipt and costs submitted successfully. Awaiting Accountant approval.';
                 } else {
                     $error = 'Error submitting costs';
@@ -319,10 +403,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     }
 
                     $conn->commit();
+                    appLogActivity($conn, 'APPROVE_STATION_ACCOUNTANT', 'Accountant processed station request #' . $request_id . ' with status ' . $finalStatus, 'station_requests', $request_id);
 
                     if ($shouldNotifyReady && !empty($requester_data['phone'])) {
                         $smsMsg = "Jamii salama! Your station '" . $requester_data['station_name'] . "' costs have been approved by Accountant. " . ($finalStatus === 'Pending Store Keeper Approval' ? 'Waiting for Store Keeper to issue store items.' : 'Installation can now begin.');
                         jassnet_sms($requester_data['phone'], $smsMsg);
+                    } else {
+                        $requestRow = stationFetchWorkflowRequest($conn, $request_id);
+                        if ($requestRow) {
+                            stationNotifyWorkflowStage($conn, $requestRow, 'accountant_update', $payoutSummary);
+                        }
                     }
 
                     if ($totalActualCost <= 0.00001) {
@@ -378,7 +468,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $smsMsg = "Jamii salama! Your station '" . htmlspecialchars($requester_data['station_name']) . "' receipt and costs have been REJECTED by Accountant. Reason: " . htmlspecialchars($rejection_reason) . " Please resubmit with corrections.";
                 jassnet_sms($requester_data['phone'], $smsMsg);
             }
+            $requestRow = stationFetchWorkflowRequest($conn, $request_id);
+            if ($requestRow) {
+                stationNotifyWorkflowStage($conn, $requestRow, 'rejected', 'Accountant: ' . $rejection_reason);
+            }
             
+            appLogActivity($conn, 'REJECT_STATION_ACCOUNTANT', 'Accountant rejected submitted station costs for request #' . $request_id, 'station_requests', $request_id);
             $message = 'Receipt and costs rejected. Requester has been notified to resubmit. SMS notification sent to requester.';
         }
     } elseif (isset($_POST['approve_storekeeper'])) {
@@ -409,6 +504,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
 
                 $conn->commit();
+                appLogActivity($conn, 'APPROVE_STATION_STOREKEEPER', 'Store Keeper issued equipment for station request #' . $request_id, 'station_requests', $request_id);
                 $message = 'Store Keeper approved and issued station equipment successfully.';
             } catch (Throwable $e) {
                 $conn->rollback();
@@ -584,18 +680,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-// Get station requests based on user role
+// Get station requests based on role permissions.
 $where_clause = '';
-if ($_SESSION['role'] == 'Sales' || $_SESSION['role'] == 'Technician') {
-    $where_clause = "WHERE sr.requested_by = {$_SESSION['user_id']}";
-} elseif ($_SESSION['role'] == 'Manager') {
-    $where_clause = "WHERE sr.status IN ('Pending Manager Approval', 'Pending Director Approval', 'Approved', 'Awaiting Accountant Approval', 'Pending Store Keeper Approval', 'Ready for Installation', 'Equipment Issued', 'Installation in Progress', 'Completed', 'Rejected')";
-} elseif ($_SESSION['role'] == 'Director') {
-    $where_clause = "WHERE sr.status IN ('Pending Director Approval', 'Approved', 'Awaiting Accountant Approval', 'Pending Store Keeper Approval', 'Ready for Installation', 'Equipment Issued', 'Installation in Progress', 'Completed', 'Rejected')";
-} elseif ($_SESSION['role'] == 'Accountant') {
-    $where_clause = "WHERE sr.status IN ('Awaiting Accountant Approval', 'Pending Store Keeper Approval', 'Ready for Installation', 'Equipment Issued', 'Installation in Progress', 'Completed')";
-} elseif ($_SESSION['role'] == 'Store Keeper') {
-    $where_clause = "WHERE sr.status IN ('Pending Store Keeper Approval', 'Equipment Issued', 'Installation in Progress', 'Completed')";
+if ((hasPermission(['Sales']) || hasPermission(['Technician'])) && !hasPermission(['Manager', 'Director', 'Accountant', 'Store Keeper', 'Super Admin'])) {
+    $where_clause = 'WHERE sr.requested_by = ' . (int) ($_SESSION['user_id'] ?? 0);
 }
 
 $station_requests = $conn->query("SELECT sr.*, u.full_name as requested_by_name, u.preferred_payout_channel as requester_payout_channel, au.full_name as approver_name, au.role as approver_role, mu.full_name as manager_name, du.full_name as director_name, acu.full_name as accountant_name, sku.full_name as storekeeper_name, (SELECT sc.total_actual_cost FROM station_costs sc WHERE sc.station_request_id = sr.id ORDER BY sc.id DESC LIMIT 1) AS latest_total_actual_cost, (SELECT COALESCE(SUM(CASE WHEN sp.status IN ('completed', 'success') THEN sp.amount_value ELSE 0 END), 0) FROM snippe_payouts sp WHERE sp.station_request_id = sr.id) AS total_station_paid, (SELECT COUNT(*) FROM snippe_payouts sp WHERE sp.station_request_id = sr.id AND sp.status IN ('pending', 'processing', 'queued')) AS active_station_payouts, (SELECT sp.status FROM snippe_payouts sp WHERE sp.station_request_id = sr.id ORDER BY sp.id DESC LIMIT 1) AS latest_payout_status, (SELECT sp.failure_reason FROM snippe_payouts sp WHERE sp.station_request_id = sr.id ORDER BY sp.id DESC LIMIT 1) AS latest_payout_failure_reason FROM station_requests sr JOIN users u ON sr.requested_by = u.id LEFT JOIN users au ON sr.approved_by = au.id LEFT JOIN users mu ON sr.manager_approved_by = mu.id LEFT JOIN users du ON sr.director_approved_by = du.id LEFT JOIN users acu ON sr.accountant_approved_by = acu.id LEFT JOIN users sku ON sr.storekeeper_approved_by = sku.id $where_clause ORDER BY request_date DESC");
@@ -619,11 +707,20 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
     </div>
 <?php endif; ?>
 
-<div class="row mb-4">
-    <div class="col-md-12">
-        <h2><i class="fas fa-broadcast-tower"></i> Station Setup Management</h2>
-    </div>
-</div>
+<?php
+$stationHeroActions = [];
+if (hasPermission(['Technician'])) {
+    $stationHeroActions[] = '<a href="request_new_station_setup.php" class="btn btn-light"><i class="fas fa-plus"></i> Request New Station Setup</a>';
+}
+echo renderPageHero([
+    'eyebrow' => 'Station Operations',
+    'title' => 'Station Setup Management',
+    'icon' => 'fa-broadcast-tower',
+    'subtitle' => 'Manage field station requests, approvals, cost submission, store workflow, and final installation progress from one control view.',
+    'badges' => ['Deployment workflow', 'Cost approval', 'Installation tracking'],
+    'actions' => $stationHeroActions,
+]);
+?>
 
 <?php if ($message): ?>
     <div class="alert alert-success"><?php echo htmlspecialchars(formatSuccessMessage($message)); ?></div>
@@ -631,18 +728,6 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
 
 <?php if ($error): ?>
     <div class="alert alert-danger"><?php echo $error; ?></div>
-<?php endif; ?>
-
-<?php if (hasPermission(['Technician'])): ?>
-<div class="row mb-4" id="request-new-station-setup">
-    <div class="col-md-12">
-        <div class="alert alert-info d-flex justify-content-end align-items-center mb-0">
-            <a class="btn btn-primary btn-sm" href="request_new_station_setup.php">
-                <i class="fas fa-plus"></i> Open Request New Station Setup
-            </a>
-        </div>
-    </div>
-</div>
 <?php endif; ?>
 
 <div class="row" id="station-setup-requests">
@@ -653,7 +738,7 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
             </div>
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table table-striped">
+                    <table class="table table-striped table-modern table-workflow-actions">
                         <thead>
                             <tr>
                                 <th>Date</th>
@@ -780,6 +865,10 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
                 <p>Reject this station request at the Manager stage?</p>
                 <form method="POST" id="rejectManagerForm">
                     <input type="hidden" name="request_id" id="rejectManagerRequestId">
+                    <div class="mb-3">
+                        <label for="manager_rejection_reason" class="form-label">Rejection Comment *</label>
+                        <textarea class="form-control" id="manager_rejection_reason" name="manager_rejection_reason" rows="3" placeholder="Explain why this station request was rejected..." required></textarea>
+                    </div>
                     <button type="submit" name="reject_manager" class="btn btn-danger">Reject as Manager</button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 </form>
@@ -822,6 +911,10 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
                 <p>Reject this station request at the Director stage?</p>
                 <form method="POST" id="rejectDirectorForm">
                     <input type="hidden" name="request_id" id="rejectDirectorRequestId">
+                    <div class="mb-3">
+                        <label for="director_rejection_reason" class="form-label">Rejection Comment *</label>
+                        <textarea class="form-control" id="director_rejection_reason" name="director_rejection_reason" rows="3" placeholder="Explain why this station request was rejected..." required></textarea>
+                    </div>
                     <button type="submit" name="reject_director" class="btn btn-danger">Reject as Director</button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 </form>
@@ -830,14 +923,15 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
     </div>
 </div>
 
-<div class="modal fade" id="editStationRequestModal" tabindex="-1">
+<div class="modal fade app-mobile-fullscreen-modal" id="editStationRequestModal" tabindex="-1" aria-labelledby="editStationRequestModalLabel" aria-describedby="editStationRequestModalDescription">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Edit Station Request</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="editStationRequestModalLabel">Edit Station Request</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <p id="editStationRequestModalDescription" class="text-muted small mb-3">Update the planned station details, cost estimate, and description before saving.</p>
                 <form method="POST" id="editStationRequestForm">
                     <input type="hidden" name="request_id" id="editStationRequestId">
                     <div class="row g-3">
@@ -875,9 +969,9 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
                             <textarea class="form-control" id="edit_station_description" name="description" rows="4" required></textarea>
                         </div>
                     </div>
-                    <div class="mt-3 d-flex gap-2">
-                        <button type="submit" name="update_station_request" class="btn btn-primary">Save Changes</button>
+                    <div class="mt-3 d-flex gap-2 flex-wrap justify-content-end">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="update_station_request" class="btn btn-primary">Save Changes</button>
                     </div>
                 </form>
             </div>
@@ -932,17 +1026,17 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
     </div>
 </div>
 
-<div class="modal fade" id="submitCostsModal" tabindex="-1">
+<div class="modal fade app-mobile-fullscreen-modal" id="submitCostsModal" tabindex="-1" aria-labelledby="submitCostsModalLabel" aria-describedby="submitCostsModalDescription">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Submit Actual Costs and Receipt</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="submitCostsModalLabel">Submit Actual Costs and Receipt</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <form method="POST" enctype="multipart/form-data" id="submitCostsForm">
                     <input type="hidden" name="request_id" id="submitCostsRequestId">
-                    <p>Please provide the actual costs incurred and upload the receipt for this station setup.</p>
+                    <p id="submitCostsModalDescription" class="text-muted small">Provide the actual cost breakdown and attach the receipt so the station setup can move to accountant review.</p>
                     
                     <h6>Actual Costs</h6>
                     <div class="row">
@@ -987,7 +1081,10 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
                         <small class="form-text text-muted">Upload receipt or invoice (PDF or image)</small>
                     </div>
                     
-                    <button type="submit" name="submit_costs" class="btn btn-primary">Submit Costs</button>
+                    <div class="d-flex gap-2 flex-wrap justify-content-end">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="submit_costs" class="btn btn-primary">Submit Costs</button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -995,7 +1092,7 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
 </div>
 
 <!-- View Receipt Modal -->
-<div class="modal fade" id="viewReceiptModal" tabindex="-1">
+<div class="modal fade app-mobile-fullscreen-modal" id="viewReceiptModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -1015,15 +1112,15 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
 </div>
 
 <!-- Approve Costs Modal -->
-<div class="modal fade" id="approveCostsModal" tabindex="-1">
+<div class="modal fade app-mobile-fullscreen-modal" id="approveCostsModal" tabindex="-1" aria-labelledby="approveCostsModalLabel" aria-describedby="approveCostsModalDescription">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Approve Station Costs</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="approveCostsModalLabel">Approve Station Costs</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <p>Review the submitted receipt and costs. Are they correct?</p>
+                <p id="approveCostsModalDescription" class="text-muted small">Review the submitted costs, confirm the payout amount, and leave an accountant comment before approval.</p>
                 <form method="POST" id="approveCostsForm">
                     <input type="hidden" name="request_id" id="approveCostsRequestId">
                     <div class="alert alert-light border small" id="approveCostsSummary">
@@ -1038,8 +1135,10 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
                         <label for="approval_notes" class="form-label">Accountant Comment *</label>
                         <textarea class="form-control" id="approval_notes" name="approval_notes" rows="3" placeholder="Add accountant approval comment..." required></textarea>
                     </div>
-                    <button type="submit" name="approve_costs_accountant" class="btn btn-success">Approve Costs & Send Payout</button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <div class="d-flex gap-2 flex-wrap justify-content-end">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="approve_costs_accountant" class="btn btn-success">Approve Costs & Send Payout</button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -1108,14 +1207,15 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
     </div>
 </div>
 
-<div class="modal fade" id="completeStationModal" tabindex="-1">
+<div class="modal fade app-mobile-fullscreen-modal" id="completeStationModal" tabindex="-1" aria-labelledby="completeStationModalLabel" aria-describedby="completeStationModalDescription">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Complete Station Setup</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="completeStationModalLabel">Complete Station Setup</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <p id="completeStationModalDescription" class="text-muted small mb-3">Enter the completion costs, receipt, and summary notes before submitting the final station handoff.</p>
                 <form method="POST" enctype="multipart/form-data" id="completeStationForm">
                     <input type="hidden" name="request_id" id="completeStationRequestId">
                     <div class="row">
@@ -1160,8 +1260,10 @@ $inventory_items = $conn->query("SELECT id, item_name, quantity FROM inventory W
                         <label for="completion_notes" class="form-label">Completion Notes</label>
                         <textarea class="form-control" id="completion_notes" name="completion_notes" rows="3" placeholder="Summarize the work completed..."></textarea>
                     </div>
-                    <button type="submit" name="complete_station" class="btn btn-success">Submit Completion</button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <div class="d-flex gap-2 flex-wrap justify-content-end">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="complete_station" class="btn btn-success">Submit Completion</button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -1213,6 +1315,7 @@ function approveManager(id) {
 
 function rejectManager(id) {
     document.getElementById('rejectManagerRequestId').value = id;
+    document.getElementById('manager_rejection_reason').value = '';
     new bootstrap.Modal(document.getElementById('rejectManagerModal')).show();
 }
 
@@ -1224,6 +1327,7 @@ function approveDirector(id) {
 
 function rejectDirector(id) {
     document.getElementById('rejectDirectorRequestId').value = id;
+    document.getElementById('director_rejection_reason').value = '';
     new bootstrap.Modal(document.getElementById('rejectDirectorModal')).show();
 }
 
@@ -1289,6 +1393,23 @@ function completeStation(id) {
     new bootstrap.Modal(document.getElementById('completeStationModal')).show();
 }
 
+function focusFirstModalField(modalId, selector) {
+    const modalEl = document.getElementById(modalId);
+    if (!modalEl) {
+        return;
+    }
+
+    modalEl.addEventListener('shown.bs.modal', function() {
+        const field = modalEl.querySelector(selector);
+        if (field) {
+            field.focus();
+            if (typeof field.select === 'function' && (field.tagName === 'INPUT' || field.tagName === 'TEXTAREA')) {
+                field.select();
+            }
+        }
+    });
+}
+
 // Calculate actual total cost
 document.addEventListener('input', function(e) {
     if (e.target.classList.contains('actual-cost-input')) {
@@ -1320,6 +1441,13 @@ document.addEventListener('input', function(e) {
     if (e.target.classList.contains('completion-cost-input')) {
         calculateCompletionTotal();
     }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    focusFirstModalField('editStationRequestModal', '#edit_station_name');
+    focusFirstModalField('submitCostsModal', '#actual_equipment_cost');
+    focusFirstModalField('approveCostsModal', '#payout_amount');
+    focusFirstModalField('completeStationModal', '#completion_date');
 });
 
 </script>

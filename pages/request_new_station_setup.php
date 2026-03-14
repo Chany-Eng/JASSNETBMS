@@ -40,6 +40,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_station_request']
 
         if ($stmt->execute()) {
             $station_id = $conn->insert_id;
+            appLogActivity($conn, 'CREATE_STATION_REQUEST', 'Submitted station request for ' . $station_name, 'station_requests', $station_id);
+            $requester = getCurrentUser();
+            if ($requester) {
+                appSendSmsToUser($requester, 'ERMS: Station request #' . $station_id . ' ya ' . $station_name . ' imepokelewa. Inasubiri Manager approval.');
+            }
+            appSendSmsToRoles($conn, ['Manager'], 'ERMS: Station request #' . $station_id . ' ya ' . $station_name . ' kutoka ' . trim((string) ($requester['full_name'] ?? 'Technician')) . ' inasubiri approval yako.', [(int) ($_SESSION['user_id'] ?? 0)]);
 
             if (isset($_POST['equipment_name']) && is_array($_POST['equipment_name'])) {
                 $count = count($_POST['equipment_name']);

@@ -1,5 +1,61 @@
 // JASSNET Business Management System JavaScript
 
+window.JassnetLoadingOverlay = window.JassnetLoadingOverlay || {
+    show: function(overlay, options = {}) {
+        if (!overlay) {
+            return;
+        }
+
+        const titleElement = overlay.querySelector('[data-loading-title]');
+        const messageElement = overlay.querySelector('[data-loading-message]');
+
+        if (titleElement && !overlay.dataset.defaultTitle) {
+            overlay.dataset.defaultTitle = titleElement.textContent.trim();
+        }
+
+        if (messageElement && !overlay.dataset.defaultMessage) {
+            overlay.dataset.defaultMessage = messageElement.textContent.trim();
+        }
+
+        if (titleElement) {
+            titleElement.textContent = options.title || overlay.dataset.defaultTitle || titleElement.textContent;
+        }
+
+        if (messageElement) {
+            messageElement.textContent = options.message || overlay.dataset.defaultMessage || messageElement.textContent;
+        }
+
+        overlay.classList.add('show');
+        overlay.setAttribute('aria-hidden', 'false');
+    },
+
+    hide: function(overlay) {
+        if (!overlay) {
+            return;
+        }
+
+        overlay.classList.remove('show');
+        overlay.setAttribute('aria-hidden', 'true');
+    },
+
+    reset: function(overlay) {
+        if (!overlay) {
+            return;
+        }
+
+        const titleElement = overlay.querySelector('[data-loading-title]');
+        const messageElement = overlay.querySelector('[data-loading-message]');
+
+        if (titleElement && overlay.dataset.defaultTitle) {
+            titleElement.textContent = overlay.dataset.defaultTitle;
+        }
+
+        if (messageElement && overlay.dataset.defaultMessage) {
+            messageElement.textContent = overlay.dataset.defaultMessage;
+        }
+    }
+};
+
 // Confirm delete actions
 function confirmDelete(message = 'Are you sure you want to delete this item?') {
     return confirm(message);

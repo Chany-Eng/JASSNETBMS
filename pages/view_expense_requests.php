@@ -28,8 +28,70 @@ function canEditExpenseRequest(array $row): bool
     return hasPermission(['Super Admin']) || ($isOwner && in_array((string) ($row['status'] ?? ''), $editableStatuses, true));
 }
 
+function expenseFetchWorkflowRequest(mysqli $conn, int $requestId): ?array
+{
+    $stmt = $conn->prepare("SELECT er.*, u.id AS requester_id, u.full_name AS requested_by_name, u.phone AS requested_by_phone FROM expense_requests er JOIN users u ON er.requested_by = u.id WHERE er.id = ? LIMIT 1");
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param('i', $requestId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc() ?: null;
+}
+
+function expenseNotifyWorkflowStage(mysqli $conn, array $requestRow, string $stage, string $comment = '', ?float $amount = null): void
+{
+    $requestId = (int) ($requestRow['id'] ?? 0);
+    $requesterId = (int) ($requestRow['requester_id'] ?? $requestRow['requested_by'] ?? 0);
+    $requesterName = trim((string) ($requestRow['requested_by_name'] ?? 'Requester'));
+    $category = trim((string) ($requestRow['category'] ?? 'Expense'));
+    $formattedAmount = number_format((float) ($amount ?? $requestRow['amount_requested'] ?? 0), 2);
+    $reason = trim($comment);
+
+    if ($stage === 'submit') {
+        appSendSmsToPhone((string) ($requestRow['requested_by_phone'] ?? ''), 'ERMS: Expense request #' . $requestId . ' ya ' . $category . ' yenye Tshs. ' . $formattedAmount . ' imepokelewa. Inasubiri Manager approval.');
+        appSendSmsToRoles($conn, ['Manager'], 'ERMS: Expense request #' . $requestId . ' kutoka ' . $requesterName . ' inasubiri approval yako.', [$requesterId]);
+        return;
+    }
+
+    if ($stage === 'manager_approved') {
+        appSendSmsToPhone((string) ($requestRow['requested_by_phone'] ?? ''), 'ERMS: Expense request #' . $requestId . ' imekubaliwa na Manager. Sasa inasubiri Director approval.');
+        appSendSmsToRoles($conn, ['Director'], 'ERMS: Expense request #' . $requestId . ' kutoka ' . $requesterName . ' inasubiri Director approval yako.', [$requesterId]);
+        return;
+    }
+
+    if ($stage === 'director_approved') {
+        appSendSmsToPhone((string) ($requestRow['requested_by_phone'] ?? ''), 'ERMS: Expense request #' . $requestId . ' imekubaliwa na Director. Sasa inasubiri Accountant processing.');
+        appSendSmsToRoles($conn, ['Accountant'], 'ERMS: Expense request #' . $requestId . ' kutoka ' . $requesterName . ' inasubiri processing yako.', [$requesterId]);
+        return;
+    }
+
+    if ($stage === 'revised') {
+        appSendSmsToPhone((string) ($requestRow['requested_by_phone'] ?? ''), 'ERMS: Expense request #' . $requestId . ' imerekebishwa na Accountant kuwa Tshs. ' . $formattedAmount . '. Sababu: ' . ($reason !== '' ? $reason : '-'));
+        appSendSmsToRoles($conn, ['Manager'], 'ERMS: Expense request #' . $requestId . ' imerudishwa kwako baada ya revision ya Accountant. Kiasi kipya: Tshs. ' . $formattedAmount . '.', [$requesterId]);
+        return;
+    }
+
+    if ($stage === 'rejected') {
+        appSendSmsToPhone((string) ($requestRow['requested_by_phone'] ?? ''), 'ERMS: Expense request #' . $requestId . ' imekataliwa. Sababu: ' . ($reason !== '' ? $reason : '-'));
+        return;
+    }
+
+    if ($stage === 'paid') {
+        $suffix = $reason !== '' ? (' Maelezo: ' . $reason) : '';
+        appSendSmsToPhone((string) ($requestRow['requested_by_phone'] ?? ''), 'ERMS: Expense request #' . $requestId . ' imefanyiwa processing ya Accountant kwa Tshs. ' . $formattedAmount . '.' . $suffix);
+        return;
+    }
+
+    if ($stage === 'completed') {
+        appSendSmsToPhone((string) ($requestRow['requested_by_phone'] ?? ''), 'ERMS: Expense request #' . $requestId . ' imekamilika na receipt imehifadhiwa.');
+    }
+}
+
 $message = '';
 $error = '';
+$isNotificationNavigation = isset($_GET['mark_notification']) && trim((string) $_GET['mark_notification']) !== '';
 
 // Check for success message
 $success_message = isset($_SESSION['success_message']) ? $_SESSION['success_message'] : '';
@@ -37,7 +99,7 @@ if ($success_message) {
     unset($_SESSION['success_message']);
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST' && hasPermission(['Accountant', 'Super Admin'])) {
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !$isNotificationNavigation && hasPermission(['Accountant', 'Super Admin'])) {
     snippeRefreshPendingPayouts($conn, 5);
     $syncExpenseRequests = $conn->query("SELECT DISTINCT expense_request_id FROM snippe_payouts WHERE expense_request_id IS NOT NULL ORDER BY id DESC LIMIT 10");
     if ($syncExpenseRequests) {
@@ -47,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && hasPermission(['Accountant', 'Super
     }
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !$isNotificationNavigation) {
     $normalizeExpenseRequests = $conn->query("SELECT id FROM expense_requests WHERE status NOT IN ('Completed', 'Rejected') ORDER BY id DESC");
     if ($normalizeExpenseRequests) {
         while ($normalizeRow = $normalizeExpenseRequests->fetch_assoc()) {
@@ -67,15 +129,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $stmt->bind_param("si", $manager_comment, $request_id);
             $stmt->execute();
             appLogActivity($conn, 'APPROVE_EXPENSE_MANAGER', 'Manager approved expense request #' . $request_id, 'expense_requests', $request_id);
+            $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
+            if ($requestRow) {
+                expenseNotifyWorkflowStage($conn, $requestRow, 'manager_approved', $manager_comment);
+            }
             $message = 'Expense request approved by manager';
         }
     } elseif (isset($_POST['reject_manager'])) {
         $request_id = intval($_POST['request_id']);
-        $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Rejected' WHERE id = ? AND status = 'Pending Manager Approval'");
-        $stmt->bind_param("i", $request_id);
-        $stmt->execute();
-        appLogActivity($conn, 'REJECT_EXPENSE_MANAGER', 'Manager rejected expense request #' . $request_id, 'expense_requests', $request_id);
-        $message = 'Expense request rejected by manager';
+        $reason = trim(sanitize($_POST['manager_rejection_reason'] ?? ''));
+        if ($reason === '') {
+            $error = 'Manager rejection comment is required.';
+        } else {
+            $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Rejected', rejection_comment = ?, manager_comment = ? WHERE id = ? AND status = 'Pending Manager Approval'");
+            $stmt->bind_param("ssi", $reason, $reason, $request_id);
+            $stmt->execute();
+            appLogActivity($conn, 'REJECT_EXPENSE_MANAGER', 'Manager rejected expense request #' . $request_id . ' with reason: ' . $reason, 'expense_requests', $request_id);
+            $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
+            if ($requestRow) {
+                expenseNotifyWorkflowStage($conn, $requestRow, 'rejected', 'Manager: ' . $reason);
+            }
+            $message = 'Expense request rejected by manager';
+        }
     } elseif (isset($_POST['approve_director'])) {
         $request_id = intval($_POST['request_id']);
         $director_comment = trim(sanitize($_POST['director_comment'] ?? ''));
@@ -86,15 +161,60 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $stmt->bind_param("si", $director_comment, $request_id);
             $stmt->execute();
             appLogActivity($conn, 'APPROVE_EXPENSE_DIRECTOR', 'Director approved expense request #' . $request_id, 'expense_requests', $request_id);
+            $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
+            if ($requestRow) {
+                expenseNotifyWorkflowStage($conn, $requestRow, 'director_approved', $director_comment);
+            }
             $message = 'Expense request approved by director';
         }
     } elseif (isset($_POST['reject_director'])) {
         $request_id = intval($_POST['request_id']);
-        $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Rejected' WHERE id = ? AND status = 'Pending Director Approval'");
-        $stmt->bind_param("i", $request_id);
-        $stmt->execute();
-        appLogActivity($conn, 'REJECT_EXPENSE_DIRECTOR', 'Director rejected expense request #' . $request_id, 'expense_requests', $request_id);
-        $message = 'Expense request rejected by director';
+        $reason = trim(sanitize($_POST['director_rejection_reason'] ?? ''));
+        if ($reason === '') {
+            $error = 'Director rejection comment is required.';
+        } else {
+            $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Rejected', rejection_comment = ?, director_comment = ? WHERE id = ? AND status = 'Pending Director Approval'");
+            $stmt->bind_param("ssi", $reason, $reason, $request_id);
+            $stmt->execute();
+            appLogActivity($conn, 'REJECT_EXPENSE_DIRECTOR', 'Director rejected expense request #' . $request_id . ' with reason: ' . $reason, 'expense_requests', $request_id);
+            $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
+            if ($requestRow) {
+                expenseNotifyWorkflowStage($conn, $requestRow, 'rejected', 'Director: ' . $reason);
+            }
+            $message = 'Expense request rejected by director';
+        }
+    } elseif (isset($_POST['revise_accountant'])) {
+        $request_id = intval($_POST['request_id']);
+        $revised_amount = floatval($_POST['revised_amount'] ?? 0);
+        $revision_comment = trim(sanitize($_POST['accountant_revision_comment'] ?? ''));
+
+        $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
+        $summaryBefore = expenseGetPayoutSummary($conn, $request_id);
+
+        if (!$requestRow || (string) ($requestRow['status'] ?? '') !== 'Pending Accountant Processing') {
+            $error = 'Expense request not found or is no longer waiting for accountant review';
+        } elseif ($revision_comment === '') {
+            $error = 'Accountant revision comment is required.';
+        } elseif ($revised_amount <= 0) {
+            $error = 'Revised amount must be greater than zero.';
+        } elseif ((float) ($summaryBefore['total_paid'] ?? 0) > 0 || !empty($summaryBefore['has_active_payout'])) {
+            $error = 'You cannot revise the amount after payment activity has started.';
+        } else {
+            $stmt = $conn->prepare("UPDATE expense_requests SET amount_requested = ?, status = 'Pending Manager Approval', manager_approved = NULL, manager_comment = NULL, director_approved = NULL, director_comment = NULL, accountant_processed = NULL, accountant_comment = ?, rejection_comment = NULL, receipt_uploaded = NULL WHERE id = ? AND status = 'Pending Accountant Processing'");
+            if ($stmt) {
+                $stmt->bind_param('dsi', $revised_amount, $revision_comment, $request_id);
+                $stmt->execute();
+            }
+
+            appLogActivity($conn, 'REVISE_EXPENSE_ACCOUNTANT', 'Accountant revised expense request #' . $request_id . ' to Tshs. ' . number_format($revised_amount, 2) . '. Reason: ' . $revision_comment, 'expense_requests', $request_id);
+            if ($requestRow) {
+                $requestRow['amount_requested'] = $revised_amount;
+                expenseNotifyWorkflowStage($conn, $requestRow, 'revised', $revision_comment, $revised_amount);
+            }
+            $_SESSION['success_message'] = 'Expense amount revised and returned to Manager for fresh approval';
+            header('Location: view_expense_requests.php');
+            exit();
+        }
     } elseif (isset($_POST['process_accountant'])) {
         $request_id = intval($_POST['request_id']);
         $amount_paid = floatval($_POST['amount_paid']);
@@ -194,12 +314,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
                     $conn->commit();
                     appLogActivity($conn, 'PROCESS_EXPENSE_PAYMENT', $successText, 'expense_requests', $request_id);
+                    $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
+                    if ($requestRow) {
+                        expenseNotifyWorkflowStage($conn, $requestRow, 'paid', $accountant_comment, $amount_paid);
+                    }
                     $_SESSION['success_message'] = $successText;
                     header('Location: view_expense_requests.php');
                     exit();
                 } catch (Throwable $e) {
                     $conn->rollback();
-                    $error = $e->getMessage();
+                    $rawError = trim((string) $e->getMessage());
+                    if (stripos($rawError, 'Snippe payout request failed:') !== false || stripos($rawError, 'Connection timed out') !== false) {
+                        $error = 'Payout processing failed at the provider. Please try again shortly or use another payout method.';
+                    } else {
+                        $error = $rawError;
+                    }
                 }
             }
         } else {
@@ -246,6 +375,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt->bind_param("i", $request_id);
                 $stmt->execute();
                 appLogActivity($conn, 'UPLOAD_RECEIPT', 'Uploaded expense receipt for request #' . $request_id, 'receipts', $request_id);
+                $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
+                if ($requestRow) {
+                    expenseNotifyWorkflowStage($conn, $requestRow, 'completed');
+                }
                 $message = 'Receipt uploaded successfully';
             } else {
                 $error = 'Error uploading receipt';
@@ -337,19 +470,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-// Get expense requests based on user role
+// Get expense requests based on role permissions.
 $where_clause = '';
-if ($_SESSION['role'] == 'Sales' || $_SESSION['role'] == 'Technician') {
-    $where_clause = "WHERE er.requested_by = {$_SESSION['user_id']}";
-} elseif ($_SESSION['role'] == 'Manager') {
-    $where_clause = "WHERE er.status = 'Pending Manager Approval' OR er.status IN ('Pending Director Approval', 'Pending Accountant Processing', 'Waiting for Receipt', 'Completed', 'Rejected')";
-} elseif ($_SESSION['role'] == 'Director') {
-    $where_clause = "WHERE er.status IN ('Pending Director Approval', 'Pending Accountant Processing', 'Waiting for Receipt', 'Completed', 'Rejected')";
-} elseif ($_SESSION['role'] == 'Accountant') {
-    $where_clause = "WHERE er.status IN ('Pending Accountant Processing', 'Waiting for Receipt', 'Completed', 'Rejected')";
+if ((hasPermission(['Sales']) || hasPermission(['Technician'])) && !hasPermission(['Manager', 'Director', 'Accountant', 'Super Admin'])) {
+    $where_clause = 'WHERE er.requested_by = ' . (int) ($_SESSION['user_id'] ?? 0);
 }
 
-$expense_requests = $conn->query("SELECT er.*, u.full_name as requested_by_name, u.phone as requested_by_phone, u.payout_phone, u.bank_name, u.bank_account_number, u.preferred_payout_channel, (SELECT COALESCE(SUM(ep.amount_paid), 0) FROM expense_payments ep WHERE ep.expense_request_id = er.id) AS total_paid, (er.amount_requested - (SELECT COALESCE(SUM(ep.amount_paid), 0) FROM expense_payments ep WHERE ep.expense_request_id = er.id)) AS remaining_balance, (SELECT COUNT(*) FROM snippe_payouts sp WHERE sp.expense_request_id = er.id AND sp.status IN ('pending', 'processing', 'queued')) AS active_payouts, (SELECT sp.status FROM snippe_payouts sp WHERE sp.expense_request_id = er.id ORDER BY sp.id DESC LIMIT 1) AS latest_payout_status, (SELECT sp.failure_reason FROM snippe_payouts sp WHERE sp.expense_request_id = er.id ORDER BY sp.id DESC LIMIT 1) AS latest_payout_failure_reason FROM expense_requests er JOIN users u ON er.requested_by = u.id $where_clause ORDER BY request_date DESC");
+$expense_requests = $conn->query("SELECT er.*, u.full_name as requested_by_name, u.phone as requested_by_phone, u.payout_phone, u.bank_name, u.bank_account_number, u.preferred_payout_channel, (SELECT COALESCE(SUM(ep.amount_paid), 0) FROM expense_payments ep WHERE ep.expense_request_id = er.id) AS total_paid, (er.amount_requested - (SELECT COALESCE(SUM(ep.amount_paid), 0) FROM expense_payments ep WHERE ep.expense_request_id = er.id)) AS remaining_balance, (SELECT COUNT(*) FROM snippe_payouts sp WHERE sp.expense_request_id = er.id AND sp.status IN ('pending', 'processing', 'queued')) AS active_payouts, (SELECT sp.status FROM snippe_payouts sp WHERE sp.expense_request_id = er.id ORDER BY sp.id DESC LIMIT 1) AS latest_payout_status, (SELECT sp.failure_reason FROM snippe_payouts sp WHERE sp.expense_request_id = er.id ORDER BY sp.id DESC LIMIT 1) AS latest_payout_failure_reason, (SELECT r.receipt_file FROM receipts r WHERE r.expense_request_id = er.id ORDER BY r.id DESC LIMIT 1) AS latest_receipt_file FROM expense_requests er JOIN users u ON er.requested_by = u.id $where_clause ORDER BY request_date DESC");
 
 $rows = [];
 $summary = [
@@ -398,80 +525,45 @@ include '../includes/header.php';
 ?>
 
 <style>
-    .expense-board {
-        background: linear-gradient(120deg, #114b5f 0%, #1a759f 100%);
-        color: #fff;
-        border-radius: 14px;
-        padding: 1.2rem 1.5rem;
-        box-shadow: 0 10px 24px rgba(17, 75, 95, 0.25);
-    }
-
-    .mini-stat {
-        border-radius: 12px;
-        border: 1px solid #d9e4ec;
-        background: #fff;
-        padding: 0.95rem 1rem;
-        height: 100%;
-    }
-
-    .mini-stat .label {
-        font-size: 0.82rem;
-        color: #6c757d;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-    }
-
-    .mini-stat .value {
-        font-size: 1.45rem;
-        font-weight: 700;
-        color: #16324f;
-    }
 </style>
 
 <div class="container-fluid py-4">
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="expense-board d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div>
-                    <h2 class="mb-1"><i class="fas fa-receipt"></i> Expense Requests</h2>
-                    <div class="small">Track approvals, payments, and receipts in one place.</div>
-                </div>
-                <?php if (hasPermission(['Sales', 'Technician'])): ?>
-                <a href="add_expense_request.php" class="btn btn-light">
-                    <i class="fas fa-plus"></i> New Request
-                </a>
-                <?php endif; ?>
-            </div>
-            </div>
-        </div>
-    </div>
+    <?php
+    $expenseHeroActions = [];
+    if (hasPermission(['Sales', 'Technician'])) {
+        $expenseHeroActions[] = '<a href="add_expense_request.php" class="btn btn-light"><i class="fas fa-plus"></i> New Request</a>';
+    }
+    echo renderPageHero([
+        'eyebrow' => 'Expense Operations',
+        'title' => 'Expense Requests',
+        'icon' => 'fa-receipt',
+        'subtitle' => 'Track approvals, accountant processing, payment receipts, and workflow status in one list.',
+        'badges' => ['Approval tracking', 'Receipt visibility', 'Payment workflow'],
+        'actions' => $expenseHeroActions,
+        'stats' => [
+            ['label' => 'Total Requests', 'value' => (string) $summary['total'], 'hint' => 'All visible expense entries'],
+            ['label' => 'Pending', 'value' => (string) $summary['pending'], 'hint' => 'Need action', 'tone' => 'warning'],
+            ['label' => 'Completed', 'value' => (string) $summary['completed'], 'hint' => 'Paid and closed', 'tone' => 'success'],
+            ['label' => 'Rejected', 'value' => (string) $summary['rejected'], 'hint' => 'Declined requests', 'tone' => 'danger'],
+        ],
+    ]);
+    ?>
 
-    <div class="row g-3 mb-4">
-        <div class="col-sm-6 col-lg-3">
-            <div class="mini-stat">
-                <div class="label">Total Requests</div>
-                <div class="value"><?php echo $summary['total']; ?></div>
+    <?php $showProviderFailureToast = $error !== '' && str_contains($error, 'Payout processing failed at the provider'); ?>
+
+    <?php if ($showProviderFailureToast): ?>
+        <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1085;">
+            <div id="providerFailureToast" class="toast border-0 shadow-sm" role="alert" aria-live="assertive" aria-atomic="true">
+                <div class="toast-header bg-danger text-white border-0">
+                    <i class="fas fa-triangle-exclamation me-2"></i>
+                    <strong class="me-auto">Payout failed</strong>
+                    <small class="text-white-50">now</small>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+                </div>
+                <div class="toast-body"><?php echo htmlspecialchars($error); ?></div>
             </div>
         </div>
-        <div class="col-sm-6 col-lg-3">
-            <div class="mini-stat">
-                <div class="label">Pending</div>
-                <div class="value text-warning"><?php echo $summary['pending']; ?></div>
-            </div>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-            <div class="mini-stat">
-                <div class="label">Completed</div>
-                <div class="value text-success"><?php echo $summary['completed']; ?></div>
-            </div>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-            <div class="mini-stat">
-                <div class="label">Rejected</div>
-                <div class="value text-danger"><?php echo $summary['rejected']; ?></div>
-            </div>
-        </div>
-    </div>
+    <?php endif; ?>
 
     <?php if ($success_message): ?>
         <div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -487,7 +579,7 @@ include '../includes/header.php';
         </div>
     <?php endif; ?>
 
-    <?php if ($error): ?>
+    <?php if ($error && !$showProviderFailureToast): ?>
         <div class="alert alert-danger alert-dismissible fade show" role="alert">
             <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -502,7 +594,7 @@ include '../includes/header.php';
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-striped table-hover align-middle">
+                        <table class="table table-striped table-hover table-modern table-workflow-actions align-middle">
                             <thead class="table-light">
                                 <tr>
                                     <th>Date</th>
@@ -543,6 +635,9 @@ include '../includes/header.php';
                                         </td>
                                         <td>
                                             <button class="btn btn-sm btn-outline-primary" onclick="viewRequest(<?php echo $row['id']; ?>)">View</button>
+                                            <?php if (!empty($row['latest_receipt_file'])): ?>
+                                                <a class="btn btn-sm btn-outline-info" href="../uploads/<?php echo htmlspecialchars((string) $row['latest_receipt_file']); ?>" target="_blank">Receipt</a>
+                                            <?php endif; ?>
                                             <?php if (canEditExpenseRequest($row)): ?>
                                                 <button class="btn btn-sm btn-outline-secondary" onclick="editExpenseRequest(<?php echo $row['id']; ?>)">Edit</button>
                                             <?php endif; ?>
@@ -566,6 +661,7 @@ include '../includes/header.php';
                                                     data-preferred-channel="<?php echo htmlspecialchars($row['preferred_payout_channel'] ?: 'mobile', ENT_QUOTES); ?>"
                                                     onclick="processAccountant(this)"
                                                 >Process</button>
+                                                <button class="btn btn-sm btn-outline-warning" onclick="reviseAccountant(<?php echo (int) $row['id']; ?>)">Revise Amount</button>
                                             <?php elseif ($row['status'] == 'Waiting for Receipt' && ($row['requested_by'] == $_SESSION['user_id'] || hasPermission(['Super Admin']))): ?>
                                                 <button class="btn btn-sm btn-info" onclick="uploadReceipt(<?php echo $row['id']; ?>)">Upload Receipt</button>
                                             <?php endif; ?>
@@ -623,6 +719,10 @@ include '../includes/header.php';
                 <p>Are you sure you want to reject this expense request?</p>
                 <form method="POST" id="rejectManagerForm">
                     <input type="hidden" name="request_id" id="rejectManagerRequestId">
+                    <div class="mb-3">
+                        <label for="manager_rejection_reason" class="form-label">Rejection Comment *</label>
+                        <textarea class="form-control" id="manager_rejection_reason" name="manager_rejection_reason" rows="3" placeholder="Explain why this request was rejected..." required></textarea>
+                    </div>
                     <button type="submit" name="reject_manager" class="btn btn-danger">Yes, Reject</button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 </form>
@@ -665,6 +765,10 @@ include '../includes/header.php';
                 <p>Are you sure you want to reject this expense request?</p>
                 <form method="POST" id="rejectDirectorForm">
                     <input type="hidden" name="request_id" id="rejectDirectorRequestId">
+                    <div class="mb-3">
+                        <label for="director_rejection_reason" class="form-label">Rejection Comment *</label>
+                        <textarea class="form-control" id="director_rejection_reason" name="director_rejection_reason" rows="3" placeholder="Explain why this request was rejected..." required></textarea>
+                    </div>
                     <button type="submit" name="reject_director" class="btn btn-danger">Yes, Reject</button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 </form>
@@ -673,14 +777,44 @@ include '../includes/header.php';
     </div>
 </div>
 
-<div class="modal fade" id="editExpenseRequestModal" tabindex="-1">
+<div class="modal fade app-mobile-fullscreen-modal" id="reviseAccountantModal" tabindex="-1" aria-labelledby="reviseAccountantModalLabel">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="reviseAccountantModalLabel">Revise Amount</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">Accountant anaweza kubadili kiasi na kurudisha request kwa Manager na Director kwa approval upya.</p>
+                <form method="POST" id="reviseAccountantForm">
+                    <input type="hidden" name="request_id" id="reviseAccountantRequestId">
+                    <div class="mb-3">
+                        <label for="revised_amount" class="form-label">Revised Amount (Tshs.) *</label>
+                        <input type="number" class="form-control" id="revised_amount" name="revised_amount" step="0.01" min="0.01" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="accountant_revision_comment" class="form-label">Revision Comment *</label>
+                        <textarea class="form-control" id="accountant_revision_comment" name="accountant_revision_comment" rows="3" placeholder="Explain why the amount was changed..." required></textarea>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap justify-content-end">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="revise_accountant" class="btn btn-warning">Save and Return to Manager</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade app-mobile-fullscreen-modal" id="editExpenseRequestModal" tabindex="-1" aria-labelledby="editExpenseRequestModalLabel" aria-describedby="editExpenseRequestModalDescription">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Edit Expense Request</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="editExpenseRequestModalLabel">Edit Expense Request</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <p id="editExpenseRequestModalDescription" class="text-muted small mb-3">Update the main request details, then save the changes when the values are correct.</p>
                 <form method="POST" id="editExpenseRequestForm">
                     <input type="hidden" name="request_id" id="editExpenseRequestId">
                     <div class="row g-3">
@@ -720,9 +854,9 @@ include '../includes/header.php';
                             <textarea class="form-control" id="edit_expense_notes" name="notes" rows="3"></textarea>
                         </div>
                     </div>
-                    <div class="mt-3 d-flex gap-2">
-                        <button type="submit" name="update_expense_request" class="btn btn-primary">Save Changes</button>
+                    <div class="mt-3 d-flex gap-2 flex-wrap justify-content-end">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="update_expense_request" class="btn btn-primary">Save Changes</button>
                     </div>
                 </form>
             </div>
@@ -749,14 +883,15 @@ include '../includes/header.php';
     </div>
 </div>
 
-<div class="modal fade" id="processAccountantModal" tabindex="-1">
+<div class="modal fade app-mobile-fullscreen-modal" id="processAccountantModal" tabindex="-1" aria-labelledby="processAccountantModalLabel" aria-describedby="processAccountantModalDescription">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Process Payment</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="processAccountantModalLabel">Process Payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <p id="processAccountantModalDescription" class="text-muted small mb-3">Confirm the payment amount, payout channel, and accountant note before recording this payout.</p>
                 <form method="POST" enctype="multipart/form-data" id="processAccountantForm">
                     <input type="hidden" name="request_id" id="processAccountantRequestId">
                     <div class="alert alert-light border">
@@ -787,21 +922,28 @@ include '../includes/header.php';
                         <label for="accountant_comment" class="form-label">Accountant Comment *</label>
                         <textarea class="form-control" id="accountant_comment" name="accountant_comment" rows="3" placeholder="Add accountant processing comment..." required></textarea>
                     </div>
-                    <button type="submit" name="process_accountant" class="btn btn-primary">Process Payment</button>
+                    <div class="d-flex gap-2 flex-wrap justify-content-end">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="process_accountant" class="btn btn-primary">Process Payment</button>
+                    </div>
                 </form>
             </div>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="uploadReceiptModal" tabindex="-1">
+<div class="modal fade app-mobile-fullscreen-modal" id="uploadReceiptModal" tabindex="-1" aria-labelledby="uploadReceiptModalLabel" aria-describedby="uploadReceiptModalDescription">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Upload Receipt</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="uploadReceiptModalLabel">Upload Receipt</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <p id="uploadReceiptModalDescription" class="text-muted small mb-3">Capture the final vendor, amount, and receipt file so the expense can be reconciled correctly.</p>
+                <?php if (hasPermission(['Super Admin'])): ?>
+                    <div class="alert alert-info">Super Admin can upload this receipt on behalf of the requesting user.</div>
+                <?php endif; ?>
                 <form method="POST" enctype="multipart/form-data" id="uploadReceiptForm">
                     <input type="hidden" name="request_id" id="uploadReceiptRequestId">
                     <div class="mb-3">
@@ -824,7 +966,10 @@ include '../includes/header.php';
                         <label for="receipt_notes" class="form-label">Notes</label>
                         <textarea class="form-control" id="receipt_notes" name="notes" rows="2"></textarea>
                     </div>
-                    <button type="submit" name="upload_receipt" class="btn btn-primary">Upload Receipt</button>
+                    <div class="d-flex gap-2 flex-wrap justify-content-end">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="upload_receipt" class="btn btn-primary">Upload Receipt</button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -942,6 +1087,7 @@ function approveManager(id) {
 
 function rejectManager(id) {
     document.getElementById('rejectManagerRequestId').value = id;
+    document.getElementById('manager_rejection_reason').value = '';
     new bootstrap.Modal(document.getElementById('rejectManagerModal')).show();
 }
 
@@ -953,7 +1099,16 @@ function approveDirector(id) {
 
 function rejectDirector(id) {
     document.getElementById('rejectDirectorRequestId').value = id;
+    document.getElementById('director_rejection_reason').value = '';
     new bootstrap.Modal(document.getElementById('rejectDirectorModal')).show();
+}
+
+function reviseAccountant(id) {
+    const row = document.getElementById('expenseRow_' + id);
+    document.getElementById('reviseAccountantRequestId').value = id;
+    document.getElementById('revised_amount').value = row ? (row.dataset.amountRequested || '') : '';
+    document.getElementById('accountant_revision_comment').value = '';
+    new bootstrap.Modal(document.getElementById('reviseAccountantModal')).show();
 }
 
 function processAccountant(button) {
@@ -979,6 +1134,23 @@ function uploadReceipt(id) {
     new bootstrap.Modal(document.getElementById('uploadReceiptModal')).show();
 }
 
+function focusFirstModalField(modalId, selector) {
+    const modalEl = document.getElementById(modalId);
+    if (!modalEl) {
+        return;
+    }
+
+    modalEl.addEventListener('shown.bs.modal', function() {
+        const field = modalEl.querySelector(selector);
+        if (field) {
+            field.focus();
+            if (typeof field.select === 'function' && (field.tagName === 'INPUT' || field.tagName === 'TEXTAREA')) {
+                field.select();
+            }
+        }
+    });
+}
+
 <?php if ($success_message): ?>
 document.addEventListener('DOMContentLoaded', function() {
     const paymentMethod = document.getElementById('payment_method');
@@ -989,6 +1161,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const amountInput = document.getElementById('amount_paid');
     if (amountInput) {
         amountInput.addEventListener('input', updateExpensePayoutSummary);
+    }
+
+    focusFirstModalField('editExpenseRequestModal', '#edit_expense_department');
+    focusFirstModalField('processAccountantModal', '#amount_paid');
+    focusFirstModalField('reviseAccountantModal', '#revised_amount');
+    focusFirstModalField('uploadReceiptModal', '#vendor_name');
+
+    const providerFailureToast = document.getElementById('providerFailureToast');
+    if (providerFailureToast) {
+        bootstrap.Toast.getOrCreateInstance(providerFailureToast, { delay: 4500 }).show();
     }
 
     var modalEl = document.getElementById('expenseSubmitSuccessModal');
@@ -1007,6 +1189,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const amountInput = document.getElementById('amount_paid');
     if (amountInput) {
         amountInput.addEventListener('input', updateExpensePayoutSummary);
+    }
+
+    focusFirstModalField('editExpenseRequestModal', '#edit_expense_department');
+    focusFirstModalField('processAccountantModal', '#amount_paid');
+    focusFirstModalField('reviseAccountantModal', '#revised_amount');
+    focusFirstModalField('uploadReceiptModal', '#vendor_name');
+
+    const providerFailureToast = document.getElementById('providerFailureToast');
+    if (providerFailureToast) {
+        bootstrap.Toast.getOrCreateInstance(providerFailureToast, { delay: 4500 }).show();
     }
 });
 <?php endif; ?>

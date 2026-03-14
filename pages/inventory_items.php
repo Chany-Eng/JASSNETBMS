@@ -372,18 +372,23 @@ $inventory_items = $conn->query('SELECT * FROM inventory WHERE COALESCE(is_delet
 </div>
 <?php endif; ?>
 
-<div class="row mb-4" id="inventory-items">
-    <div class="col-md-12 d-flex justify-content-between align-items-center">
-        <h2><i class="fas fa-list"></i> Inventory Items</h2>
-        <div class="d-flex gap-2 flex-wrap">
-            <a href="inventory_items.php?export=pdf" class="btn btn-outline-danger"><i class="fas fa-file-pdf"></i> Download PDF</a>
-            <a href="inventory_items.php?export=excel" class="btn btn-outline-success"><i class="fas fa-file-excel"></i> Download Excel</a>
-            <?php if ($canUpdateStock): ?>
-            <a href="add_inventory.php" class="btn btn-outline-secondary"><i class="fas fa-plus"></i> Add Inventory Item</a>
-            <?php endif; ?>
-        </div>
-    </div>
-</div>
+<?php
+$inventoryHeroActions = [
+    '<a href="inventory_items.php?export=pdf" class="btn btn-outline-light"><i class="fas fa-file-pdf"></i> Download PDF</a>',
+    '<a href="inventory_items.php?export=excel" class="btn btn-outline-light"><i class="fas fa-file-excel"></i> Download Excel</a>',
+];
+if ($canUpdateStock) {
+    $inventoryHeroActions[] = '<a href="add_inventory.php" class="btn btn-light"><i class="fas fa-plus"></i> Add Inventory Item</a>';
+}
+echo renderPageHero([
+    'eyebrow' => 'Inventory Control',
+    'title' => 'Inventory Items',
+    'icon' => 'fa-boxes-stacked',
+    'subtitle' => 'Review stock levels, suppliers, pricing, availability status, and export inventory records in a clean management view.',
+    'badges' => ['Stock visibility', 'Export ready', 'Supplier tracking'],
+    'actions' => $inventoryHeroActions,
+]);
+?>
 
 <?php if ($error): ?>
 <div class="alert alert-danger"><?php echo htmlspecialchars($error); ?></div>
@@ -397,7 +402,7 @@ $inventory_items = $conn->query('SELECT * FROM inventory WHERE COALESCE(is_delet
             </div>
             <div class="card-body">
                 <div class="table-responsive">
-                    <table class="table table-striped table-modern">
+                    <table class="table table-striped table-modern table-workflow-actions">
                         <thead>
                             <tr>
                                 <th>Item Name</th>

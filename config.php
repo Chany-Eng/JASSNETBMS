@@ -16,6 +16,65 @@ if ($conn->connect_error) {
 // Set charset to utf8
 $conn->set_charset("utf8");
 
+if (!defined('SENDER_ID')) {
+    define('SENDER_ID', 'JASSNET');
+}
+
+if (!defined('SMS_API_URL')) {
+    define('SMS_API_URL', getenv('SMS_API_URL') ?: 'http://mshastra.com/sendsms_api.json.aspx');
+}
+
+if (!defined('SMS_API_USERNAME')) {
+    define('SMS_API_USERNAME', getenv('SMS_API_USERNAME') ?: 'jassnet012');
+}
+
+if (!defined('SMS_API_PASSWORD')) {
+    define('SMS_API_PASSWORD', getenv('SMS_API_PASSWORD') ?: 'p4_sm661');
+}
+
+if (!defined('WHATSAPP_API_VERSION')) {
+    define('WHATSAPP_API_VERSION', getenv('WHATSAPP_API_VERSION') ?: 'v22.0');
+}
+
+if (!defined('WHATSAPP_API_BASE_URL')) {
+    define('WHATSAPP_API_BASE_URL', getenv('WHATSAPP_API_BASE_URL') ?: 'https://graph.facebook.com');
+}
+
+if (!defined('WHATSAPP_API_TOKEN')) {
+    define('WHATSAPP_API_TOKEN', getenv('WHATSAPP_API_TOKEN') ?: 'EAF0d4yFdn7YBQ7Fwyzdk0NI1LwszszGnBEg6UCZAKtdDF2TY9slp2rKQyboGWRzZAMwp8JKDLIfMV8hBb39x5x7FMKX1eZAHJwUFZAWJOBgA5OzWe8RRZB0YOyOc3KikNc1bynmMrcPycacE0XPYoVdhyxU8WPp6hrNHDsg0IGZBZB6SHB3PCP3sljN5FFZC8OfUw9rrpoQCo2pJBpfWqwaG7ipCdZCO9HIkP16YjFOdxnkZCeuYfkGhbTPP8jevt1AtzfZCvFj3JLogs7lJdRbIgowYYwm7udEiUSXkAZDZD');
+}
+
+if (!defined('WHATSAPP_PHONE_NUMBER_ID')) {
+    define('WHATSAPP_PHONE_NUMBER_ID', getenv('WHATSAPP_PHONE_NUMBER_ID') ?: '1023890624140571');
+}
+
+if (!defined('WHATSAPP_MESSAGE_MODE')) {
+    define('WHATSAPP_MESSAGE_MODE', getenv('WHATSAPP_MESSAGE_MODE') ?: 'text');
+}
+
+if (!defined('WHATSAPP_DEFAULT_TEMPLATE')) {
+    define('WHATSAPP_DEFAULT_TEMPLATE', getenv('WHATSAPP_DEFAULT_TEMPLATE') ?: 'hello_world');
+}
+
+if (!defined('WHATSAPP_DEFAULT_TEMPLATE_LANGUAGE')) {
+    define('WHATSAPP_DEFAULT_TEMPLATE_LANGUAGE', getenv('WHATSAPP_DEFAULT_TEMPLATE_LANGUAGE') ?: 'en_US');
+}
+
+if (!defined('WHATSAPP_OTP_TEMPLATE')) {
+    define('WHATSAPP_OTP_TEMPLATE', getenv('WHATSAPP_OTP_TEMPLATE') ?: '');
+}
+
+if (!defined('WHATSAPP_OTP_TEMPLATE_LANGUAGE')) {
+    define('WHATSAPP_OTP_TEMPLATE_LANGUAGE', getenv('WHATSAPP_OTP_TEMPLATE_LANGUAGE') ?: 'en_US');
+}
+
+if (!defined('WHATSAPP_ENABLED')) {
+    define('WHATSAPP_ENABLED', getenv('WHATSAPP_ENABLED') !== false
+        ? filter_var(getenv('WHATSAPP_ENABLED'), FILTER_VALIDATE_BOOLEAN)
+        : (WHATSAPP_API_TOKEN !== '' && WHATSAPP_PHONE_NUMBER_ID !== '')
+    );
+}
+
 // Snippe Payment Gateway configuration (use environment variables for secrets)
 if (!defined('SNIPPE_API_BASE_URL')) {
     define('SNIPPE_API_BASE_URL', getenv('SNIPPE_API_BASE_URL') ?: 'https://api.snippe.sh');

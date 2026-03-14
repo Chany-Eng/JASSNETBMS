@@ -7,10 +7,10 @@ if (!isLoggedIn()) {
     exit();
 }
 
-requirePermission(['Sales', 'Director', 'Super Admin']);
+requirePermission(['Sales', 'Director', 'Accountant', 'Super Admin']);
 
 $canRunSnippeSync = hasPermission(['Director', 'Super Admin']);
-$isSalesOnlyIncomeView = hasPermission(['Sales']) && !$canRunSnippeSync;
+$isSalesOnlyIncomeView = hasPermission(['Sales']) && !hasPermission(['Accountant', 'Director', 'Super Admin']);
 
 $message = '';
 $error = '';
@@ -155,36 +155,38 @@ include '../includes/header.php';
     </div>
 
     <div class="row g-3 mb-4">
-        <div class="col-sm-6 col-lg-3">
+        <div class="col-sm-6 <?php echo $canRunSnippeSync ? 'col-lg-3' : 'col-lg-6'; ?>">
             <div class="income-stat">
                 <div class="label">Total Records</div>
                 <div class="value"><?php echo (int) $total_records; ?></div>
             </div>
         </div>
-        <div class="col-sm-6 col-lg-3">
+        <div class="col-sm-6 <?php echo $canRunSnippeSync ? 'col-lg-3' : 'col-lg-6'; ?>">
             <div class="income-stat">
                 <div class="label">Records Per Page</div>
                 <div class="value"><?php echo (int) $limit; ?></div>
             </div>
         </div>
-        <div class="col-sm-6 col-lg-3">
-            <div class="income-stat">
-                <div class="label">Last Imported</div>
-                <div class="value"><?php echo (int) ($lastSync['imported_count'] ?? 0); ?></div>
-            </div>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-            <div class="income-stat">
-                <div class="label">Sync Status</div>
-                <?php
-                    $syncStatus = $lastSync['status'] ?? 'idle';
-                    $syncStatusClass = $syncStatus === 'success' ? 'success' : ($syncStatus === 'failed' ? 'danger' : 'secondary');
-                ?>
-                <div class="value text-<?php echo $syncStatusClass; ?>">
-                    <?php echo htmlspecialchars(strtoupper($syncStatus)); ?>
+        <?php if ($canRunSnippeSync): ?>
+            <div class="col-sm-6 col-lg-3">
+                <div class="income-stat">
+                    <div class="label">Last Imported</div>
+                    <div class="value"><?php echo (int) ($lastSync['imported_count'] ?? 0); ?></div>
                 </div>
             </div>
-        </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="income-stat">
+                    <div class="label">Sync Status</div>
+                    <?php
+                        $syncStatus = $lastSync['status'] ?? 'idle';
+                        $syncStatusClass = $syncStatus === 'success' ? 'success' : ($syncStatus === 'failed' ? 'danger' : 'secondary');
+                    ?>
+                    <div class="value text-<?php echo $syncStatusClass; ?>">
+                        <?php echo htmlspecialchars(strtoupper($syncStatus)); ?>
+                    </div>
+                </div>
+            </div>
+        <?php endif; ?>
     </div>
 
     <?php if ($success_message): ?>
