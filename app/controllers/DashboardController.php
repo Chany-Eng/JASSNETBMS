@@ -293,21 +293,29 @@ class DashboardController extends BaseController
             return $this->expenseModel->getPendingCount();
         }
 
+        $where = [];
+        $bindings = [];
+
         if ($this->userHasRole(['Accountant'])) {
-            return $this->countRows("SELECT COUNT(*) AS cnt FROM expense_requests WHERE status = 'Pending Accountant Processing'");
+            $where[] = "status = 'Pending Accountant Processing'";
         }
 
         if ($this->userHasRole(['Director'])) {
-            return $this->countRows("SELECT COUNT(*) AS cnt FROM expense_requests WHERE status = 'Pending Director Approval'");
+            $where[] = "status = 'Pending Director Approval'";
         }
 
         if ($this->userHasRole(['Manager'])) {
-            return $this->countRows("SELECT COUNT(*) AS cnt FROM expense_requests WHERE status = 'Pending Manager Approval'");
+            $where[] = "status = 'Pending Manager Approval'";
+        }
+
+        if ($this->userHasRole(['Sales', 'Technician']) || $where === []) {
+            $where[] = "(requested_by = :user_id AND status NOT IN ('Completed', 'Rejected'))";
+            $bindings[':user_id'] = $userId;
         }
 
         return $this->countRows(
-            "SELECT COUNT(*) AS cnt FROM expense_requests WHERE requested_by = :user_id AND status NOT IN ('Completed', 'Rejected')",
-            [':user_id' => $userId]
+            'SELECT COUNT(*) AS cnt FROM expense_requests WHERE ' . implode(' OR ', $where),
+            $bindings
         );
     }
 
@@ -319,23 +327,29 @@ class DashboardController extends BaseController
             return $this->expenseModel->getTotalPending();
         }
 
+        $where = [];
+
         if ($this->userHasRole(['Accountant'])) {
-            $this->db->prepare("SELECT COALESCE(SUM(amount_requested), 0) AS total FROM expense_requests WHERE status = 'Pending Accountant Processing'");
-            return (float) (($this->db->fetch()['total'] ?? 0));
+            $where[] = "status = 'Pending Accountant Processing'";
         }
 
         if ($this->userHasRole(['Director'])) {
-            $this->db->prepare("SELECT COALESCE(SUM(amount_requested), 0) AS total FROM expense_requests WHERE status = 'Pending Director Approval'");
-            return (float) (($this->db->fetch()['total'] ?? 0));
+            $where[] = "status = 'Pending Director Approval'";
         }
 
         if ($this->userHasRole(['Manager'])) {
-            $this->db->prepare("SELECT COALESCE(SUM(amount_requested), 0) AS total FROM expense_requests WHERE status = 'Pending Manager Approval'");
-            return (float) (($this->db->fetch()['total'] ?? 0));
+            $where[] = "status = 'Pending Manager Approval'";
         }
 
-        $this->db->prepare("SELECT COALESCE(SUM(amount_requested), 0) AS total FROM expense_requests WHERE requested_by = :user_id AND status NOT IN ('Completed', 'Rejected')");
-        $this->db->bind(':user_id', $userId);
+        if ($this->userHasRole(['Sales', 'Technician']) || $where === []) {
+            $where[] = "(requested_by = :user_id AND status NOT IN ('Completed', 'Rejected'))";
+        }
+
+        $this->db->prepare('SELECT COALESCE(SUM(amount_requested), 0) AS total FROM expense_requests WHERE ' . implode(' OR ', $where));
+        if (str_contains(implode(' OR ', $where), ':user_id')) {
+            $this->db->bind(':user_id', $userId);
+        }
+
         return (float) (($this->db->fetch()['total'] ?? 0));
     }
 
@@ -355,29 +369,46 @@ class DashboardController extends BaseController
             ];
         }
 
+        $pendingWhere = [];
+        $pendingBindings = [];
+        $activeWhere = [];
+        $activeBindings = [];
+
         if ($this->userHasRole(['Accountant'])) {
-            $count = $this->countRows("SELECT COUNT(*) AS cnt FROM {$table} WHERE status = 'Awaiting Accountant Approval'");
-            return ['pending' => $count, 'active' => $count];
+            $pendingWhere[] = "status = 'Awaiting Accountant Approval'";
+            $activeWhere[] = "status = 'Awaiting Accountant Approval'";
         }
 
         if ($this->userHasRole(['Director'])) {
-            $count = $this->countRows("SELECT COUNT(*) AS cnt FROM {$table} WHERE status = 'Pending Director Approval'");
-            return ['pending' => $count, 'active' => $count];
+            $pendingWhere[] = "status = 'Pending Director Approval'";
+            $activeWhere[] = "status = 'Pending Director Approval'";
         }
 
         if ($this->userHasRole(['Manager'])) {
-            $count = $this->countRows("SELECT COUNT(*) AS cnt FROM {$table} WHERE status = 'Pending Manager Approval'");
-            return ['pending' => $count, 'active' => $count];
+            $pendingWhere[] = "status = 'Pending Manager Approval'";
+            $activeWhere[] = "status = 'Pending Manager Approval'";
+        }
+
+        if ($this->userHasRole(['Store Keeper'])) {
+            $pendingWhere[] = "status = 'Pending Store Keeper Approval'";
+            $activeWhere[] = "status = 'Pending Store Keeper Approval'";
+        }
+
+        if ($this->userHasRole(['Technician']) || $pendingWhere === []) {
+            $pendingWhere[] = "({$userScope} AND status IN ('Pending Manager Approval', 'Pending Director Approval', 'Awaiting Accountant Approval', 'Pending Store Keeper Approval'))";
+            $activeWhere[] = "({$userScope} AND status NOT IN ('Completed', 'Rejected'))";
+            $pendingBindings = $userBinding;
+            $activeBindings = $userBinding;
         }
 
         return [
             'pending' => $this->countRows(
-                "SELECT COUNT(*) AS cnt FROM {$table} WHERE {$userScope} AND status IN ('Pending Manager Approval', 'Pending Director Approval', 'Awaiting Accountant Approval', 'Pending Store Keeper Approval')",
-                $userBinding
+                "SELECT COUNT(*) AS cnt FROM {$table} WHERE " . implode(' OR ', $pendingWhere),
+                $pendingBindings
             ),
             'active' => $this->countRows(
-                "SELECT COUNT(*) AS cnt FROM {$table} WHERE {$userScope} AND status NOT IN ('Completed', 'Rejected')",
-                $userBinding
+                "SELECT COUNT(*) AS cnt FROM {$table} WHERE " . implode(' OR ', $activeWhere),
+                $activeBindings
             ),
         ];
     }
@@ -392,9 +423,9 @@ class DashboardController extends BaseController
             'can_view_expense_operations' => $this->hasPermission(['Sales', 'Technician', 'Manager', 'Accountant', 'Director', 'Super Admin']),
             'can_view_inventory' => $this->hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin']),
             'can_view_inventory_value' => $this->hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin']),
-            'can_view_station_charts' => $this->hasPermission(['Technician', 'Manager', 'Accountant', 'Director', 'Super Admin']),
+            'can_view_station_charts' => $this->hasPermission(['Technician', 'Store Keeper', 'Manager', 'Accountant', 'Director', 'Super Admin']),
             'can_view_inventory_charts' => $this->hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin']),
-            'can_view_stations' => $this->hasPermission(['Technician', 'Manager', 'Accountant', 'Director', 'Super Admin']),
+            'can_view_stations' => $this->hasPermission(['Technician', 'Store Keeper', 'Manager', 'Accountant', 'Director', 'Super Admin']),
             'can_view_payroll' => $this->hasPermission(['Accountant', 'Manager', 'Director', 'Super Admin']),
         ];
     }

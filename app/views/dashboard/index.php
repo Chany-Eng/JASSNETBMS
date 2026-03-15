@@ -19,7 +19,13 @@ $canViewPayroll = !empty($permissions['can_view_payroll']);
 $recentActivities = $recent_activities ?? [];
 $reportLinks = $report_links ?? [];
 $roleNotices = $role_notices ?? [];
-$userRoles = array_map('trim', explode(',', (string) ($user['role'] ?? '')));
+$userRoles = array_values(array_filter(array_map('trim', explode(',', (string) ($user['role'] ?? '')))));
+if ($userRoles === []) {
+    $userRoles = ['User'];
+}
+
+$userRoleSummary = implode(' | ', $userRoles);
+$userRoleCount = count($userRoles);
 $hasRole = static function (array $rolesToCheck) use ($userRoles): bool {
     $normalizedRoles = array_map('strtolower', $userRoles);
     foreach ($rolesToCheck as $roleToCheck) {
@@ -58,7 +64,7 @@ if ($canViewStations && !$canViewAllFinancials) {
     $statCards[] = ['title' => 'Pending Stations', 'value' => number_format((float) ($stats['pending_stations'] ?? 0)), 'icon' => 'fa-diagram-project', 'tone' => 'blue', 'meta' => 'Station approvals or setup tasks waiting'];
 }
 if ($canViewOwnIncome && !$canViewAllFinancials) {
-    $statCards[] = ['title' => 'My Role', 'value' => htmlspecialchars($user['role'] ?? 'User'), 'icon' => 'fa-id-badge', 'tone' => 'indigo', 'meta' => 'Current signed-in role'];
+    $statCards[] = ['title' => 'My Roles', 'value' => htmlspecialchars($userRoleSummary), 'icon' => 'fa-id-badge', 'tone' => 'indigo', 'meta' => 'Current signed-in access roles'];
 }
 if ($canViewPayroll) {
     $statCards[] = ['title' => 'Pending Payroll', 'value' => number_format((float) ($stats['pending_payroll_requests'] ?? 0)), 'icon' => 'fa-money-check-dollar', 'tone' => 'cyan', 'meta' => 'Salary requests awaiting workflow action'];
@@ -279,6 +285,26 @@ $statusTone = static function (string $status): string {
         font-weight: 600;
         color: #f8fbff;
         border: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    .dash-role-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+        margin-top: 1rem;
+    }
+
+    .dash-role-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.45rem 0.75rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        color: #f8fbff;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        font-size: 0.82rem;
+        font-weight: 700;
     }
 
     .dash-panel {
@@ -786,11 +812,17 @@ $statusTone = static function (string $status): string {
                             <div class="mb-2 text-uppercase small fw-semibold opacity-75">JASSNET Control Center</div>
                             <h2 class="mb-2">Professional Operations Dashboard</h2>
                             <div class="opacity-75">Income, expense approvals, inventory movement, and station deployment metrics in one responsive workspace.</div>
+                            <div class="dash-role-list">
+                                <span class="dash-role-pill"><i class="fas fa-user"></i> <?= htmlspecialchars($user['full_name'] ?? ($user['username'] ?? 'User')) ?></span>
+                                <?php foreach ($userRoles as $roleLabel): ?>
+                                    <span class="dash-role-pill"><i class="fas fa-shield-halved"></i> <?= htmlspecialchars($roleLabel) ?></span>
+                                <?php endforeach; ?>
+                            </div>
                         </div>
                         <div class="col-lg-4">
                             <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
                                 <span class="dash-chip"><i class="fas fa-calendar-day"></i> <?= date('d M Y') ?></span>
-                                <span class="dash-chip"><i class="fas fa-user-shield"></i> <?= htmlspecialchars($user['role'] ?? 'User') ?></span>
+                                <span class="dash-chip"><i class="fas fa-user-shield"></i> <?= $userRoleCount ?> <?= $userRoleCount === 1 ? 'Role' : 'Roles' ?></span>
                                 <?php if ($canViewAllFinancials): ?>
                                     <span class="dash-chip"><i class="fas fa-chart-line"></i> <?= $formatCurrency($stats['net_profit'] ?? 0) ?></span>
                                 <?php endif; ?>
@@ -1229,7 +1261,11 @@ $statusTone = static function (string $status): string {
                     </div>
                     <div class="dash-mini-card">
                         <div class="label">Role Access</div>
-                        <div class="value"><?= htmlspecialchars($user['role'] ?? 'User') ?></div>
+                        <div class="value"><?= htmlspecialchars($userRoleSummary) ?></div>
+                    </div>
+                    <div class="dash-mini-card">
+                        <div class="label">Assigned Roles</div>
+                        <div class="value"><?= number_format($userRoleCount) ?></div>
                     </div>
                     <div class="dash-mini-card">
                         <div class="label">Today</div>

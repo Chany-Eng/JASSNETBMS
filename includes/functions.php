@@ -135,20 +135,97 @@ function appGenerateTemporaryPassword(int $length = 10): string
     return $password;
 }
 
-function appBuildCredentialSmsMessage(string $recipientName, string $username, string $plainPassword): string
+function appBuildCredentialSmsMessage(string $recipientName, string $username, string $plainPassword, string $context = 'welcome'): string
 {
     $name = trim($recipientName) !== '' ? trim($recipientName) : 'User';
+    if ($context === 'reset') {
+        return 'JASSNET ERMS ' . $name . ', admin amereset akaunti yako. Username yako ni ' . $username . ' na temporary password mpya ni ' . $plainPassword . '. Password hii itatumika mara moja tu. Ukisha login utatakiwa kuibadilisha kabla ya kuendelea.';
+    }
+
     return 'Karibu JASSNET ERMS ' . $name . '. Username yako ni ' . $username . ' na temporary password ni ' . $plainPassword . '. Password hii itatumika mara moja tu. Ukisha login kwa mara ya kwanza utatakiwa kuibadilisha kabla ya kuendelea.';
 }
 
-function appSendCredentialSms(string $phone, string $recipientName, string $username, string $plainPassword)
+function appBuildCredentialEmailContent(string $recipientName, string $username, string $plainPassword, string $context = 'welcome'): array
+{
+    $safeName = trim($recipientName) !== '' ? trim($recipientName) : 'User';
+    $safeUsername = trim($username);
+    $loginUrl = defined('APP_URL') ? rtrim((string) APP_URL, '/') . '/index.php' : 'the ERMS login page';
+    $smsMessage = appBuildCredentialSmsMessage($safeName, $safeUsername, $plainPassword, $context);
+    $subject = $context === 'reset'
+        ? 'JASSNET ERMS Password Reset'
+        : 'Karibu JASSNET ERMS';
+    $headline = $context === 'reset'
+        ? 'Temporary Password Reset'
+        : 'Welcome to JASSNET ERMS';
+    $intro = $context === 'reset'
+        ? 'Administrator amekuwekea temporary password mpya ya kuingia kwenye mfumo.'
+        : 'Akaunti yako ya JASSNET ERMS imefunguliwa na temporary password imeandaliwa kwa ajili ya kuanza kutumia mfumo.';
+
+    $htmlBody = '<div style="font-family:Segoe UI,Arial,sans-serif;color:#1f2937;line-height:1.6">'
+        . '<h2 style="margin:0 0 12px;color:#17365c">' . htmlspecialchars($headline, ENT_QUOTES, 'UTF-8') . '</h2>'
+        . '<p>Hello ' . htmlspecialchars($safeName, ENT_QUOTES, 'UTF-8') . ',</p>'
+        . '<p>' . htmlspecialchars($intro, ENT_QUOTES, 'UTF-8') . '</p>'
+        . '<p><strong>Username:</strong> ' . htmlspecialchars($safeUsername, ENT_QUOTES, 'UTF-8') . '<br>'
+        . '<strong>Temporary Password:</strong> ' . htmlspecialchars($plainPassword, ENT_QUOTES, 'UTF-8') . '</p>'
+        . '<p>Please log in at <a href="' . htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8') . '">' . htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8') . '</a> and change this password immediately after your first login.</p>'
+        . '<div style="margin:18px 0;padding:14px 16px;background:#f5f7fb;border-left:4px solid #17365c;border-radius:6px">'
+        . '<div style="font-size:13px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#526277;margin-bottom:8px">SMS Message Sent</div>'
+        . '<div>' . nl2br(htmlspecialchars($smsMessage, ENT_QUOTES, 'UTF-8')) . '</div>'
+        . '</div>'
+        . '<p style="margin-top:24px;color:#6b7280">JASSNET ERMS</p>'
+        . '</div>';
+    $textBody = "Hello {$safeName},\n\n{$intro}\n\nUsername: {$safeUsername}\nTemporary Password: {$plainPassword}\nLogin URL: {$loginUrl}\n\nSMS Message Sent:\n{$smsMessage}\n\nJASSNET ERMS";
+
+    return [
+        'subject' => $subject,
+        'html' => $htmlBody,
+        'text' => $textBody,
+        'sms_message' => $smsMessage,
+    ];
+}
+
+function appSendCredentialSms(string $phone, string $recipientName, string $username, string $plainPassword, string $context = 'welcome')
 {
     $normalizedPhone = appNormalizeSmsPhone($phone);
     if ($normalizedPhone === '') {
         return null;
     }
 
-    return jassnet_sms($normalizedPhone, appBuildCredentialSmsMessage($recipientName, $username, $plainPassword));
+    return jassnet_sms($normalizedPhone, appBuildCredentialSmsMessage($recipientName, $username, $plainPassword, $context));
+}
+
+function appSendCredentialEmail(string $email, string $recipientName, string $username, string $plainPassword, string $context = 'welcome')
+{
+    $trimmedEmail = trim($email);
+    if ($trimmedEmail === '') {
+        return null;
+    }
+
+    if (!filter_var($trimmedEmail, FILTER_VALIDATE_EMAIL)) {
+        return [
+            'success' => false,
+            'error' => 'invalid_email',
+            'email' => $trimmedEmail,
+        ];
+    }
+
+    $sender = $GLOBALS['mailSender'] ?? null;
+    if (!$sender instanceof JASSnetMailSender) {
+        return [
+            'success' => false,
+            'error' => 'mail_not_configured',
+            'email' => $trimmedEmail,
+        ];
+    }
+
+    $emailContent = appBuildCredentialEmailContent($recipientName, $username, $plainPassword, $context);
+    return $sender->sendEmail(
+        $trimmedEmail,
+        trim($recipientName) !== '' ? trim($recipientName) : 'User',
+        $emailContent['subject'],
+        $emailContent['html'],
+        $emailContent['text']
+    );
 }
 
 function appSendTextChannelsToPhone(string $phone, string $message): array

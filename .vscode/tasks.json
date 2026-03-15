@@ -1,0 +1,105 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "probe-php-version",
+			"type": "shell",
+			"command": "php",
+			"args": [
+				"-v"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "probe-db-users",
+			"type": "shell",
+			"command": "C:\\xampp\\mysql\\bin\\mysql.exe",
+			"args": [
+				"-u",
+				"root",
+				"-D",
+				"jassnet_bms",
+				"-e",
+				"SELECT id, username, role, full_name, phone, email FROM users ORDER BY id LIMIT 10;"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "probe-mysql-ping",
+			"type": "shell",
+			"command": "C:\\xampp\\mysql\\bin\\mysqladmin.exe",
+			"args": [
+				"--connect-timeout=5",
+				"-u",
+				"root",
+				"ping"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "lint-temp-flow-script",
+			"type": "shell",
+			"command": "C:\\xampp\\php\\php.exe",
+			"args": [
+				"-l",
+				"scripts\\tmp_add_and_reset_test.php"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "run-temp-add-reset-flow",
+			"type": "shell",
+			"command": "C:\\xampp\\php\\php.exe",
+			"args": [
+				"scripts\\tmp_add_and_reset_test.php"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "run-temp-add-reset-flow-2",
+			"type": "shell",
+			"command": "C:\\xampp\\php\\php.exe",
+			"args": [
+				"scripts\\tmp_add_and_reset_test.php"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "run-temp-add-reset-flow-3",
+			"type": "shell",
+			"command": "C:\\xampp\\php\\php.exe",
+			"args": [
+				"scripts\\tmp_add_and_reset_test.php"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "verify-created-test-users",
+			"type": "shell",
+			"command": "C:\\xampp\\mysql\\bin\\mysql.exe",
+			"args": [
+				"-u",
+				"root",
+				"-D",
+				"jassnet_bms",
+				"-e",
+				"SELECT id, username, full_name, phone, email, must_change_password FROM users WHERE username LIKE 'test.%' ORDER BY id DESC LIMIT 5;"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "list-test-users-cleanup",
+			"type": "shell",
+			"command": "C:\\xampp\\mysql\\bin\\mysql.exe",
+			"args": [
+				"-u",
+				"root",
+				"-D",
+				"jassnet_bms",
+				"-e",
+				"SELECT id, username, full_name, email, must_change_password FROM users WHERE username LIKE \"test.%\" ORDER BY id DESC;"
+			],
+			"isBackground": false
+		}
+	]
+}

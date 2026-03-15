@@ -87,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif (isset($_POST['reset_password'])) {
         $user_id = intval($_POST['user_id'] ?? 0);
-        $userStmt = $conn->prepare('SELECT username, full_name, phone FROM users WHERE id = ? LIMIT 1');
+        $userStmt = $conn->prepare('SELECT username, full_name, phone, email FROM users WHERE id = ? LIMIT 1');
         if ($userStmt) {
             $userStmt->bind_param('i', $user_id);
             $userStmt->execute();
@@ -100,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $plainPassword = appGenerateTemporaryPassword();
                 $recipientName = trim((string) ($userRecord['full_name'] ?? 'User'));
-                $smsResponse = appSendCredentialSms((string) $userRecord['phone'], $recipientName, (string) ($userRecord['username'] ?? ''), $plainPassword);
+                $smsResponse = appSendCredentialSms((string) $userRecord['phone'], $recipientName, (string) ($userRecord['username'] ?? ''), $plainPassword, 'reset');
 
                 if (!is_array($smsResponse) || empty($smsResponse['success'])) {
                     $error = 'Password reset cancelled because SMS could not be sent';
@@ -110,8 +110,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($stmt) {
                         $stmt->bind_param('si', $new_password, $user_id);
                         if ($stmt->execute()) {
-                                appLogActivity($conn, 'RESET_PASSWORD', 'Reset password and sent SMS to user #' . $user_id, 'users', $user_id);
-                            $_SESSION['success_message'] = 'Password reset and SMS sent successfully';
+                            $emailResponse = appSendCredentialEmail((string) ($userRecord['email'] ?? ''), $recipientName, (string) ($userRecord['username'] ?? ''), $plainPassword, 'reset');
+                            $emailAttempted = trim((string) ($userRecord['email'] ?? '')) !== '';
+                            $emailSent = is_array($emailResponse) && !empty($emailResponse['success']);
+
+                            $logMessage = 'Reset password and sent SMS to user #' . $user_id;
+                            if ($emailAttempted) {
+                                $logMessage .= $emailSent ? ' plus email.' : ', but email delivery failed.';
+                            } else {
+                                $logMessage .= '.';
+                            }
+
+                            appLogActivity($conn, 'RESET_PASSWORD', $logMessage, 'users', $user_id);
+                            $_SESSION['success_message'] = ($emailAttempted && $emailSent)
+                                ? 'Password reset and SMS plus email sent successfully'
+                                : (($emailAttempted && !$emailSent)
+                                    ? 'Password reset and SMS sent successfully, but email failed'
+                                    : 'Password reset and SMS sent successfully');
                             header('Location: users.php');
                             exit();
                         } else {
@@ -573,7 +588,7 @@ if (!$users) {
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p id="resetPasswordMessage">A new one-time temporary password will be generated and sent by SMS to this user's phone number.</p>
+                <p id="resetPasswordMessage">A new one-time temporary password will be generated and sent by SMS, and also by email if this user has an email address saved.</p>
                 <form method="POST" id="resetPasswordForm">
                     <input type="hidden" name="user_id" id="resetPasswordUserId">
                     <button type="submit" name="reset_password" class="btn btn-warning">Yes, Reset Password</button>
@@ -687,7 +702,8 @@ function resetPassword(id) {
     if (row) {
         const fullName = row.dataset.full_name || 'This user';
         const phone = row.dataset.phone || 'no phone number saved';
-        document.getElementById('resetPasswordMessage').textContent = fullName + ' will receive a one-time temporary password by SMS at ' + phone + '.';
+        const email = row.dataset.email || '';
+        document.getElementById('resetPasswordMessage').textContent = fullName + ' will receive a one-time temporary password by SMS at ' + phone + (email ? ' and by email at ' + email + '.' : '.');
     }
     new bootstrap.Modal(document.getElementById('resetPasswordModal')).show();
 }

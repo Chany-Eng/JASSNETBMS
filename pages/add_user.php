@@ -130,14 +130,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             if ($stmt && $stmt->execute()) {
                 $newUserId = (int) $stmt->insert_id;
-                $smsResponse = appSendCredentialSms($phone, $full_name, $username, $plain_pass);
+                $smsResponse = appSendCredentialSms($phone, $full_name, $username, $plain_pass, 'welcome');
+                $emailResponse = appSendCredentialEmail($email, $full_name, $username, $plain_pass, 'welcome');
                 $smsSent = is_array($smsResponse) && !empty($smsResponse['success']);
+                $emailAttempted = trim($email) !== '';
+                $emailSent = is_array($emailResponse) && !empty($emailResponse['success']);
 
-                appLogActivity($conn, 'CREATE_USER', 'Created user account for ' . $full_name . ($smsSent ? ' and sent welcome SMS.' : ' but welcome SMS could not be confirmed.'), 'users', $newUserId);
-                if ($smsSent) {
-                    $_SESSION['success_message'] = 'User added successfully and welcome SMS sent';
+                $channelSummary = [];
+                $channelSummary[] = $smsSent ? 'welcome SMS sent' : 'welcome SMS failed';
+                if ($emailAttempted) {
+                    $channelSummary[] = $emailSent ? 'welcome email sent' : 'welcome email failed';
+                }
+
+                appLogActivity($conn, 'CREATE_USER', 'Created user account for ' . $full_name . '. ' . ucfirst(implode('; ', $channelSummary)) . '.', 'users', $newUserId);
+                if ($smsSent && $emailSent) {
+                    $_SESSION['success_message'] = 'User added successfully and welcome SMS plus email sent';
+                } elseif ($smsSent) {
+                    $_SESSION['success_message'] = $emailAttempted
+                        ? 'User added successfully and welcome SMS sent, but email failed'
+                        : 'User added successfully and welcome SMS sent';
+                } elseif ($emailSent) {
+                    $_SESSION['success_message'] = 'User added successfully and welcome email sent, but SMS failed. Username: ' . $username . ' | Temporary password: ' . $plain_pass;
                 } else {
-                    $_SESSION['success_message'] = 'User added successfully, but welcome SMS failed. Username: ' . $username . ' | Temporary password: ' . $plain_pass;
+                    $_SESSION['success_message'] = 'User added successfully, but welcome SMS failed' . ($emailAttempted ? ' and email failed' : '') . '. Username: ' . $username . ' | Temporary password: ' . $plain_pass;
                 }
                 header("Location: users.php");
                 exit();
@@ -281,7 +296,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             <div class="mb-3">
                                 <label for="password" class="form-label">Password *</label>
                                 <input type="text" class="form-control" id="password" value="Generated automatically" readonly>
-                                <div class="form-text">A temporary one-time password will be generated automatically and sent to the user by SMS.</div>
+                                <div class="form-text">A temporary one-time password will be generated automatically and sent by SMS, and also by email if an email address is provided.</div>
                             </div>
                             <div class="mb-3">
                                 <label for="role" class="form-label">Roles *</label>
@@ -364,6 +379,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             <div class="mb-3">
                                 <label for="email" class="form-label">Email Address</label>
                                 <input type="email" class="form-control" id="email" name="email" value="<?php echo oldInput('email'); ?>">
+                                <div class="form-text">Optional, but recommended so the welcome SMS content is also delivered by email.</div>
                             </div>
                             <div class="mb-3">
                                 <label class="form-label">Close Relative 1</label>
