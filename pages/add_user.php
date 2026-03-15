@@ -15,6 +15,17 @@ $bankOptions = snippeRenderBankOptions();
 $message = '';
 $error = '';
 $submittedRoles = isset($_POST['role']) && is_array($_POST['role']) ? array_map('strval', $_POST['role']) : [];
+$closeRelativeOptions = ['Mama', 'Mke', 'Mtoto', 'Baba', 'Shangazi', 'Ndugu', 'Mlezi', 'Mwingine'];
+
+function oldInput(string $key, string $default = ''): string
+{
+    return htmlspecialchars((string) ($_POST[$key] ?? $default), ENT_QUOTES, 'UTF-8');
+}
+
+function oldSelected(string $key, string $value): string
+{
+    return ((string) ($_POST[$key] ?? '') === $value) ? 'selected' : '';
+}
 
 // Check for success message
 $success_message = isset($_SESSION['success_message']) ? $_SESSION['success_message'] : '';
@@ -37,6 +48,23 @@ function generateEmployeeId($conn) {
     return $prefix . str_pad($num, 4, '0', STR_PAD_LEFT);
 }
 
+function collectCloseRelativePayload(int $position): array
+{
+    $relationship = sanitize($_POST['close_relative_' . $position . '_relationship'] ?? '');
+    $name = sanitize($_POST['close_relative_' . $position . '_name'] ?? '');
+    $phone = appNormalizeSmsPhone((string) ($_POST['close_relative_' . $position . '_phone'] ?? ''));
+    $location = sanitize($_POST['close_relative_' . $position . '_location'] ?? '');
+    $email = sanitize($_POST['close_relative_' . $position . '_email'] ?? '');
+
+    return [
+        'relationship' => $relationship,
+        'name' => $name,
+        'phone' => $phone,
+        'location' => $location,
+        'email' => $email,
+    ];
+}
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['add_user'])) {
         $first_name = sanitize($_POST['first_name'] ?? '');
@@ -44,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $last_name = sanitize($_POST['last_name'] ?? '');
         $full_name = composeFullNameFromParts($first_name, $middle_name, $last_name);
         $username = generateUniqueUsername($conn, $first_name, $last_name);
-        $plain_pass = $_POST['password'];
+        $plain_pass = appGenerateTemporaryPassword();
         $password = password_hash($plain_pass, PASSWORD_DEFAULT);
         $roles = isset($_POST['role']) ? array_map('sanitize', $_POST['role']) : [];
         $role = implode(',', $roles);
@@ -52,24 +80,69 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $id_number = sanitize($_POST['id_number'] ?? '');
         $location = sanitize($_POST['location']);
         $gender = sanitize($_POST['gender'] ?? '');
-        $phone = sanitize($_POST['phone']);
+        $phone = appNormalizeSmsPhone((string) ($_POST['phone'] ?? ''));
         $email = sanitize($_POST['email']);
+        $closeRelativeOne = collectCloseRelativePayload(1);
+        $closeRelativeTwo = collectCloseRelativePayload(2);
         $bank_name = sanitize($_POST['bank_name'] ?? '');
         $bank_account_number = sanitize($_POST['bank_account_number'] ?? '');
-        $payout_phone = sanitize($_POST['payout_phone'] ?? '');
+        $payout_phone = appNormalizeSmsPhone((string) ($_POST['payout_phone'] ?? ''));
         $preferred_payout_channel = sanitize($_POST['preferred_payout_channel'] ?? 'mobile');
 
         if ($first_name === '' || $last_name === '' || empty($roles)) {
             $error = 'First name, last name, and at least one role are required';
+        } elseif ($phone === '') {
+            $error = 'Phone number is required so the new user can receive the welcome SMS and OTP';
         } else {
-            $stmt = $conn->prepare("INSERT INTO users (username, password, role, first_name, middle_name, last_name, full_name, employee_id, id_number, location, gender, phone, email, bank_name, bank_account_number, payout_phone, preferred_payout_channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("sssssssssssssssss", $username, $password, $role, $first_name, $middle_name, $last_name, $full_name, $employee_id, $id_number, $location, $gender, $phone, $email, $bank_name, $bank_account_number, $payout_phone, $preferred_payout_channel);
+            $stmt = $conn->prepare("INSERT INTO users (username, password, role, first_name, middle_name, last_name, full_name, employee_id, id_number, location, gender, phone, email, close_relative_1_relationship, close_relative_1_name, close_relative_1_phone, close_relative_1_location, close_relative_1_email, close_relative_2_relationship, close_relative_2_name, close_relative_2_phone, close_relative_2_location, close_relative_2_email, bank_name, bank_account_number, payout_phone, preferred_payout_channel, must_change_password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)");
+            if ($stmt) {
+                $stmt->bind_param(
+                    "sssssssssssssssssssssssssss",
+                    $username,
+                    $password,
+                    $role,
+                    $first_name,
+                    $middle_name,
+                    $last_name,
+                    $full_name,
+                    $employee_id,
+                    $id_number,
+                    $location,
+                    $gender,
+                    $phone,
+                    $email,
+                    $closeRelativeOne['relationship'],
+                    $closeRelativeOne['name'],
+                    $closeRelativeOne['phone'],
+                    $closeRelativeOne['location'],
+                    $closeRelativeOne['email'],
+                    $closeRelativeTwo['relationship'],
+                    $closeRelativeTwo['name'],
+                    $closeRelativeTwo['phone'],
+                    $closeRelativeTwo['location'],
+                    $closeRelativeTwo['email'],
+                    $bank_name,
+                    $bank_account_number,
+                    $payout_phone,
+                    $preferred_payout_channel
+                );
+            }
 
             if ($stmt && $stmt->execute()) {
-                appLogActivity($conn, 'CREATE_USER', 'Created user account for ' . $full_name, 'users', (int) $stmt->insert_id);
-                $_SESSION['success_message'] = 'User added successfully';
+                $newUserId = (int) $stmt->insert_id;
+                $smsResponse = appSendCredentialSms($phone, $full_name, $username, $plain_pass);
+                $smsSent = is_array($smsResponse) && !empty($smsResponse['success']);
+
+                appLogActivity($conn, 'CREATE_USER', 'Created user account for ' . $full_name . ($smsSent ? ' and sent welcome SMS.' : ' but welcome SMS could not be confirmed.'), 'users', $newUserId);
+                if ($smsSent) {
+                    $_SESSION['success_message'] = 'User added successfully and welcome SMS sent';
+                } else {
+                    $_SESSION['success_message'] = 'User added successfully, but welcome SMS failed. Username: ' . $username . ' | Temporary password: ' . $plain_pass;
+                }
                 header("Location: users.php");
                 exit();
+            } elseif (!$stmt) {
+                $error = 'Could not prepare user creation query';
             } else {
                 $error = 'Error adding user';
             }
@@ -207,8 +280,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             </div>
                             <div class="mb-3">
                                 <label for="password" class="form-label">Password *</label>
-                                <input type="password" class="form-control" id="password" name="password" value="password" required>
-                                <div class="form-text">Default password is "password"</div>
+                                <input type="text" class="form-control" id="password" value="Generated automatically" readonly>
+                                <div class="form-text">A temporary one-time password will be generated automatically and sent to the user by SMS.</div>
                             </div>
                             <div class="mb-3">
                                 <label for="role" class="form-label">Roles *</label>
@@ -248,15 +321,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         <div class="col-md-6">
                             <div class="mb-3">
                                 <label for="first_name" class="form-label">First Name *</label>
-                                <input type="text" class="form-control" id="first_name" name="first_name" required>
+                                <input type="text" class="form-control" id="first_name" name="first_name" value="<?php echo oldInput('first_name'); ?>" required>
                             </div>
                             <div class="mb-3">
                                 <label for="middle_name" class="form-label">Middle Name</label>
-                                <input type="text" class="form-control" id="middle_name" name="middle_name">
+                                <input type="text" class="form-control" id="middle_name" name="middle_name" value="<?php echo oldInput('middle_name'); ?>">
                             </div>
                             <div class="mb-3">
                                 <label for="last_name" class="form-label">Last Name *</label>
-                                <input type="text" class="form-control" id="last_name" name="last_name" required>
+                                <input type="text" class="form-control" id="last_name" name="last_name" value="<?php echo oldInput('last_name'); ?>" required>
                             </div>
                             <div class="mb-3">
                                 <label for="full_name_preview" class="form-label">Full Name</label>
@@ -264,36 +337,88 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             </div>
                             <div class="mb-3">
                                 <label for="employee_id" class="form-label">Employee ID *</label>
-                                <input type="text" class="form-control" id="employee_id" name="employee_id" readonly value="<?php echo generateEmployeeId($conn); ?>">
+                                <input type="text" class="form-control" id="employee_id" name="employee_id" readonly value="<?php echo oldInput('employee_id', generateEmployeeId($conn)); ?>">
                                 <div class="form-text">Automatically generated</div>
                             </div>
                             <div class="mb-3">
                                 <label for="id_number" class="form-label">ID Number</label>
-                                <input type="text" class="form-control" id="id_number" name="id_number" placeholder="Zanzibar ID / NIDA / other ID number">
+                                <input type="text" class="form-control" id="id_number" name="id_number" value="<?php echo oldInput('id_number'); ?>" placeholder="Zanzibar ID / NIDA / other ID number">
                             </div>
                             <div class="mb-3">
                                 <label for="location" class="form-label">Location</label>
-                                <input type="text" class="form-control" id="location" name="location">
+                                <input type="text" class="form-control" id="location" name="location" value="<?php echo oldInput('location'); ?>">
                             </div>
                             <div class="mb-3">
                                 <label for="gender" class="form-label">Gender</label>
                                 <select class="form-select" id="gender" name="gender">
                                     <option value="">Select gender</option>
-                                    <option value="Male">Male</option>
-                                    <option value="Female">Female</option>
+                                    <option value="Male" <?php echo oldSelected('gender', 'Male'); ?>>Male</option>
+                                    <option value="Female" <?php echo oldSelected('gender', 'Female'); ?>>Female</option>
                                 </select>
                             </div>
                             <div class="mb-3">
                                 <label for="phone" class="form-label">Phone Number</label>
-                                <input type="tel" class="form-control" id="phone" name="phone">
+                                <input type="tel" class="form-control" id="phone" name="phone" value="<?php echo oldInput('phone'); ?>" required>
+                                <div class="form-text">Required for welcome SMS and login OTP delivery.</div>
                             </div>
                             <div class="mb-3">
                                 <label for="email" class="form-label">Email Address</label>
-                                <input type="email" class="form-control" id="email" name="email">
+                                <input type="email" class="form-control" id="email" name="email" value="<?php echo oldInput('email'); ?>">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Close Relative 1</label>
+                                <div class="row g-2">
+                                    <div class="col-md-4">
+                                        <select class="form-select" name="close_relative_1_relationship">
+                                            <option value="">Relationship</option>
+                                            <?php foreach ($closeRelativeOptions as $option): ?>
+                                                <option value="<?php echo htmlspecialchars($option); ?>" <?php echo oldSelected('close_relative_1_relationship', $option); ?>><?php echo htmlspecialchars($option); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <input type="text" class="form-control" name="close_relative_1_name" value="<?php echo oldInput('close_relative_1_name'); ?>" placeholder="Full name">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <input type="tel" class="form-control" id="close_relative_1_phone" name="close_relative_1_phone" value="<?php echo oldInput('close_relative_1_phone'); ?>" placeholder="Phone number">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <input type="email" class="form-control" name="close_relative_1_email" value="<?php echo oldInput('close_relative_1_email'); ?>" placeholder="Email if available">
+                                    </div>
+                                    <div class="col-12">
+                                        <input type="text" class="form-control" name="close_relative_1_location" value="<?php echo oldInput('close_relative_1_location'); ?>" placeholder="Location">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Close Relative 2</label>
+                                <div class="row g-2">
+                                    <div class="col-md-4">
+                                        <select class="form-select" name="close_relative_2_relationship">
+                                            <option value="">Relationship</option>
+                                            <?php foreach ($closeRelativeOptions as $option): ?>
+                                                <option value="<?php echo htmlspecialchars($option); ?>" <?php echo oldSelected('close_relative_2_relationship', $option); ?>><?php echo htmlspecialchars($option); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <input type="text" class="form-control" name="close_relative_2_name" value="<?php echo oldInput('close_relative_2_name'); ?>" placeholder="Full name">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <input type="tel" class="form-control" id="close_relative_2_phone" name="close_relative_2_phone" value="<?php echo oldInput('close_relative_2_phone'); ?>" placeholder="Phone number">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <input type="email" class="form-control" name="close_relative_2_email" value="<?php echo oldInput('close_relative_2_email'); ?>" placeholder="Email if available">
+                                    </div>
+                                    <div class="col-12">
+                                        <input type="text" class="form-control" name="close_relative_2_location" value="<?php echo oldInput('close_relative_2_location'); ?>" placeholder="Location">
+                                    </div>
+                                </div>
+                                <div class="form-text">You can save up to two close relatives with phone, location, and email when available.</div>
                             </div>
                             <div class="mb-3">
                                 <label for="bank_name" class="form-label">Bank</label>
-                                <select class="form-select" id="bank_name" name="bank_name">
+                                <select class="form-select" id="bank_name" name="bank_name" data-selected-value="<?php echo oldInput('bank_name'); ?>">
                                     <?php echo $bankOptions; ?>
                                 </select>
                                 <div class="form-text">Choose the exact Snippe bank code for automated bank payouts.</div>
@@ -303,21 +428,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             </div>
                             <div class="mb-3">
                                 <label for="bank_account_number" class="form-label">Bank Account No.</label>
-                                <input type="text" class="form-control" id="bank_account_number" name="bank_account_number">
+                                <input type="text" class="form-control" id="bank_account_number" name="bank_account_number" value="<?php echo oldInput('bank_account_number'); ?>">
                             </div>
                             <div class="mb-3">
                                 <label for="payout_phone" class="form-label">Payout Phone</label>
                                 <div class="field-prefix-group">
                                     <span class="field-prefix">255</span>
-                                    <input type="tel" class="form-control" id="payout_phone" name="payout_phone" placeholder="7XXXXXXXX" inputmode="numeric" maxlength="12">
+                                    <input type="tel" class="form-control" id="payout_phone" name="payout_phone" value="<?php echo oldInput('payout_phone'); ?>" placeholder="7XXXXXXXX" inputmode="numeric" maxlength="12">
                                 </div>
                                 <div class="form-text">Mobile payout number will automatically start with 255.</div>
                             </div>
                             <div class="mb-3">
                                 <label for="preferred_payout_channel" class="form-label">Preferred Payout Channel</label>
                                 <select class="form-select" id="preferred_payout_channel" name="preferred_payout_channel">
-                                    <option value="mobile">Mobile Money</option>
-                                    <option value="bank">Bank Transfer</option>
+                                    <option value="mobile" <?php echo oldSelected('preferred_payout_channel', 'mobile'); ?>>Mobile Money</option>
+                                    <option value="bank" <?php echo oldSelected('preferred_payout_channel', 'bank'); ?>>Bank Transfer</option>
                                 </select>
                             </div>
                         </div>
@@ -343,6 +468,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const usernameInput = document.getElementById('username');
     const fullNamePreviewInput = document.getElementById('full_name_preview');
     const payoutPhoneInput = document.getElementById('payout_phone');
+    const phoneInput = document.getElementById('phone');
+    const bankNameSelect = document.getElementById('bank_name');
 
     function slugPart(value) {
         return value
@@ -372,7 +499,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function normalizeTanzaniaPhone(value) {
         const digits = String(value || '').replace(/\D/g, '');
         if (digits === '') {
-            return '255';
+            return '';
         }
 
         if (digits.startsWith('255')) {
@@ -404,6 +531,21 @@ document.addEventListener('DOMContentLoaded', function() {
         payoutPhoneInput.addEventListener('blur', function() {
             payoutPhoneInput.value = normalizeTanzaniaPhone(payoutPhoneInput.value);
         });
+    }
+
+    ['phone', 'close_relative_1_phone', 'close_relative_2_phone'].forEach(function(fieldId) {
+        const input = document.getElementById(fieldId);
+        if (!input) {
+            return;
+        }
+
+        input.addEventListener('blur', function() {
+            input.value = normalizeTanzaniaPhone(input.value);
+        });
+    });
+
+    if (bankNameSelect && bankNameSelect.dataset.selectedValue) {
+        bankNameSelect.value = bankNameSelect.dataset.selectedValue;
     }
 
     updateGeneratedFields();

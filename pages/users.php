@@ -30,16 +30,17 @@ $userRoleOptions = [
     ['value' => 'Super Admin', 'icon' => 'fa-shield-halved'],
 ];
 
-function generateTemporaryPassword($length = 10) {
-    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#$%';
-    $maxIndex = strlen($alphabet) - 1;
-    $password = '';
+$closeRelativeOptions = ['Mama', 'Mke', 'Mtoto', 'Baba', 'Shangazi', 'Ndugu', 'Mlezi', 'Mwingine'];
 
-    for ($index = 0; $index < $length; $index++) {
-        $password .= $alphabet[random_int(0, $maxIndex)];
-    }
-
-    return $password;
+function collectEditCloseRelativePayload(int $position): array
+{
+    return [
+        'relationship' => sanitize($_POST['close_relative_' . $position . '_relationship'] ?? ''),
+        'name' => sanitize($_POST['close_relative_' . $position . '_name'] ?? ''),
+        'phone' => appNormalizeSmsPhone((string) ($_POST['close_relative_' . $position . '_phone'] ?? '')),
+        'location' => sanitize($_POST['close_relative_' . $position . '_location'] ?? ''),
+        'email' => sanitize($_POST['close_relative_' . $position . '_email'] ?? ''),
+    ];
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -57,21 +58,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id_number = sanitize($_POST['id_number'] ?? '');
         $location = sanitize($_POST['location'] ?? '');
         $gender = sanitize($_POST['gender'] ?? '');
-        $phone = sanitize($_POST['phone'] ?? '');
+        $phone = appNormalizeSmsPhone((string) ($_POST['phone'] ?? ''));
         $email = sanitize($_POST['email'] ?? '');
+        $closeRelativeOne = collectEditCloseRelativePayload(1);
+        $closeRelativeTwo = collectEditCloseRelativePayload(2);
         $bank_name = sanitize($_POST['bank_name'] ?? '');
         $bank_account_number = sanitize($_POST['bank_account_number'] ?? '');
-        $payout_phone = sanitize($_POST['payout_phone'] ?? '');
+        $payout_phone = appNormalizeSmsPhone((string) ($_POST['payout_phone'] ?? ''));
         $preferred_payout_channel = sanitize($_POST['preferred_payout_channel'] ?? 'mobile');
         $is_active = isset($_POST['is_active']) ? 1 : 0;
 
         if ($first_name === '' || $last_name === '' || empty($roles)) {
             $error = 'First name, last name, and at least one role are required';
         } else {
-            $stmt = $conn->prepare('UPDATE users SET username = ?, role = ?, first_name = ?, middle_name = ?, last_name = ?, full_name = ?, employee_id = ?, id_number = ?, location = ?, gender = ?, phone = ?, email = ?, bank_name = ?, bank_account_number = ?, payout_phone = ?, preferred_payout_channel = ?, is_active = ? WHERE id = ?');
+            $stmt = $conn->prepare('UPDATE users SET username = ?, role = ?, first_name = ?, middle_name = ?, last_name = ?, full_name = ?, employee_id = ?, id_number = ?, location = ?, gender = ?, phone = ?, email = ?, close_relative_1_relationship = ?, close_relative_1_name = ?, close_relative_1_phone = ?, close_relative_1_location = ?, close_relative_1_email = ?, close_relative_2_relationship = ?, close_relative_2_name = ?, close_relative_2_phone = ?, close_relative_2_location = ?, close_relative_2_email = ?, bank_name = ?, bank_account_number = ?, payout_phone = ?, preferred_payout_channel = ?, is_active = ? WHERE id = ?');
         }
         if (!$error && $stmt) {
-            $stmt->bind_param('ssssssssssssssssii', $username, $role, $first_name, $middle_name, $last_name, $full_name, $employee_id, $id_number, $location, $gender, $phone, $email, $bank_name, $bank_account_number, $payout_phone, $preferred_payout_channel, $is_active, $user_id);
+            $stmt->bind_param('sssssssssssssssssssssssssssii', $username, $role, $first_name, $middle_name, $last_name, $full_name, $employee_id, $id_number, $location, $gender, $phone, $email, $closeRelativeOne['relationship'], $closeRelativeOne['name'], $closeRelativeOne['phone'], $closeRelativeOne['location'], $closeRelativeOne['email'], $closeRelativeTwo['relationship'], $closeRelativeTwo['name'], $closeRelativeTwo['phone'], $closeRelativeTwo['location'], $closeRelativeTwo['email'], $bank_name, $bank_account_number, $payout_phone, $preferred_payout_channel, $is_active, $user_id);
             if ($stmt->execute()) {
                 appLogActivity($conn, 'UPDATE_USER', 'Updated user account for ' . $full_name, 'users', $user_id);
                 $_SESSION['success_message'] = 'User updated successfully';
@@ -79,12 +82,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit();
             }
             $error = 'Error updating user';
-        } else {
+        } elseif (!$error) {
             $error = 'Could not prepare update query';
         }
     } elseif (isset($_POST['reset_password'])) {
         $user_id = intval($_POST['user_id'] ?? 0);
-        $userStmt = $conn->prepare('SELECT full_name, phone FROM users WHERE id = ? LIMIT 1');
+        $userStmt = $conn->prepare('SELECT username, full_name, phone FROM users WHERE id = ? LIMIT 1');
         if ($userStmt) {
             $userStmt->bind_param('i', $user_id);
             $userStmt->execute();
@@ -95,16 +98,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif (trim((string) ($userRecord['phone'] ?? '')) === '') {
                 $error = 'Cannot reset password by SMS because this user has no phone number saved';
             } else {
-                $plainPassword = generateTemporaryPassword();
+                $plainPassword = appGenerateTemporaryPassword();
                 $recipientName = trim((string) ($userRecord['full_name'] ?? 'User'));
-                $smsMessage = 'Habari ' . $recipientName . ', password yako mpya ya JASSNET ni: ' . $plainPassword . '. Tafadhali ibadilishe mara baada ya kuingia.';
-                $smsResponse = jassnet_sms((string) $userRecord['phone'], $smsMessage);
+                $smsResponse = appSendCredentialSms((string) $userRecord['phone'], $recipientName, (string) ($userRecord['username'] ?? ''), $plainPassword);
 
-                if ($smsResponse === null) {
+                if (!is_array($smsResponse) || empty($smsResponse['success'])) {
                     $error = 'Password reset cancelled because SMS could not be sent';
                 } else {
                     $new_password = password_hash($plainPassword, PASSWORD_DEFAULT);
-                    $stmt = $conn->prepare('UPDATE users SET password = ?, password_last_changed = CURDATE() WHERE id = ?');
+                    $stmt = $conn->prepare('UPDATE users SET password = ?, password_last_changed = CURDATE(), must_change_password = 1 WHERE id = ?');
                     if ($stmt) {
                         $stmt->bind_param('si', $new_password, $user_id);
                         if ($stmt->execute()) {
@@ -313,6 +315,16 @@ if (!$users) {
                                     data-gender="<?php echo htmlspecialchars($user['gender'] ?? ''); ?>"
                                     data-phone="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>"
                                     data-email="<?php echo htmlspecialchars($user['email'] ?? ''); ?>"
+                                    data-close_relative_1_relationship="<?php echo htmlspecialchars($user['close_relative_1_relationship'] ?? ''); ?>"
+                                    data-close_relative_1_name="<?php echo htmlspecialchars($user['close_relative_1_name'] ?? ''); ?>"
+                                    data-close_relative_1_phone="<?php echo htmlspecialchars($user['close_relative_1_phone'] ?? ''); ?>"
+                                    data-close_relative_1_location="<?php echo htmlspecialchars($user['close_relative_1_location'] ?? ''); ?>"
+                                    data-close_relative_1_email="<?php echo htmlspecialchars($user['close_relative_1_email'] ?? ''); ?>"
+                                    data-close_relative_2_relationship="<?php echo htmlspecialchars($user['close_relative_2_relationship'] ?? ''); ?>"
+                                    data-close_relative_2_name="<?php echo htmlspecialchars($user['close_relative_2_name'] ?? ''); ?>"
+                                    data-close_relative_2_phone="<?php echo htmlspecialchars($user['close_relative_2_phone'] ?? ''); ?>"
+                                    data-close_relative_2_location="<?php echo htmlspecialchars($user['close_relative_2_location'] ?? ''); ?>"
+                                    data-close_relative_2_email="<?php echo htmlspecialchars($user['close_relative_2_email'] ?? ''); ?>"
                                     data-bank_name="<?php echo htmlspecialchars($user['bank_name'] ?? ''); ?>"
                                     data-bank_account_number="<?php echo htmlspecialchars($user['bank_account_number'] ?? ''); ?>"
                                     data-payout_phone="<?php echo htmlspecialchars($user['payout_phone'] ?? ''); ?>"
@@ -426,6 +438,56 @@ if (!$users) {
                                 <input type="email" class="form-control" id="edit_email" name="email">
                             </div>
                             <div class="mb-3">
+                                <label class="form-label">Close Relative 1</label>
+                                <div class="row g-2">
+                                    <div class="col-md-4">
+                                        <select class="form-select" id="edit_close_relative_1_relationship" name="close_relative_1_relationship">
+                                            <option value="">Relationship</option>
+                                            <?php foreach ($closeRelativeOptions as $option): ?>
+                                                <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <input type="text" class="form-control" id="edit_close_relative_1_name" name="close_relative_1_name" placeholder="Full name">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <input type="tel" class="form-control" id="edit_close_relative_1_phone" name="close_relative_1_phone" placeholder="Phone number">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <input type="email" class="form-control" id="edit_close_relative_1_email" name="close_relative_1_email" placeholder="Email if available">
+                                    </div>
+                                    <div class="col-12">
+                                        <input type="text" class="form-control" id="edit_close_relative_1_location" name="close_relative_1_location" placeholder="Location">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Close Relative 2</label>
+                                <div class="row g-2">
+                                    <div class="col-md-4">
+                                        <select class="form-select" id="edit_close_relative_2_relationship" name="close_relative_2_relationship">
+                                            <option value="">Relationship</option>
+                                            <?php foreach ($closeRelativeOptions as $option): ?>
+                                                <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-8">
+                                        <input type="text" class="form-control" id="edit_close_relative_2_name" name="close_relative_2_name" placeholder="Full name">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <input type="tel" class="form-control" id="edit_close_relative_2_phone" name="close_relative_2_phone" placeholder="Phone number">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <input type="email" class="form-control" id="edit_close_relative_2_email" name="close_relative_2_email" placeholder="Email if available">
+                                    </div>
+                                    <div class="col-12">
+                                        <input type="text" class="form-control" id="edit_close_relative_2_location" name="close_relative_2_location" placeholder="Location">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
                                 <label for="edit_bank_name" class="form-label">Bank</label>
                                 <select class="form-select" id="edit_bank_name" name="bank_name">
                                     <?php echo $bankOptions; ?>
@@ -489,6 +551,8 @@ if (!$users) {
                     <div class="col-md-6"><strong>Location:</strong> <span id="view_location">-</span></div>
                     <div class="col-md-6"><strong>Phone:</strong> <span id="view_phone">-</span></div>
                     <div class="col-md-6"><strong>Email:</strong> <span id="view_email">-</span></div>
+                    <div class="col-md-6"><strong>Close Relative 1:</strong> <span id="view_close_relative_1">-</span></div>
+                    <div class="col-md-6"><strong>Close Relative 2:</strong> <span id="view_close_relative_2">-</span></div>
                     <div class="col-md-6"><strong>Status:</strong> <span id="view_status">-</span></div>
                     <div class="col-md-6"><strong>Roles:</strong> <span id="view_role">-</span></div>
                     <div class="col-md-6"><strong>Preferred Payout:</strong> <span id="view_preferred_channel">-</span></div>
@@ -509,7 +573,7 @@ if (!$users) {
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p id="resetPasswordMessage">A new temporary password will be generated and sent by SMS to this user's phone number.</p>
+                <p id="resetPasswordMessage">A new one-time temporary password will be generated and sent by SMS to this user's phone number.</p>
                 <form method="POST" id="resetPasswordForm">
                     <input type="hidden" name="user_id" id="resetPasswordUserId">
                     <button type="submit" name="reset_password" class="btn btn-warning">Yes, Reset Password</button>
@@ -555,6 +619,8 @@ function viewUser(id) {
     document.getElementById('view_location').textContent = row.dataset.location || 'N/A';
     document.getElementById('view_phone').textContent = row.dataset.phone || 'N/A';
     document.getElementById('view_email').textContent = row.dataset.email || 'N/A';
+    document.getElementById('view_close_relative_1').textContent = formatCloseRelative(row, 1);
+    document.getElementById('view_close_relative_2').textContent = formatCloseRelative(row, 2);
     document.getElementById('view_status').textContent = row.dataset.is_active === '1' ? 'Active' : 'Inactive';
     document.getElementById('view_role').textContent = row.dataset.role || 'N/A';
     document.getElementById('view_preferred_channel').textContent = row.dataset.preferred_payout_channel === 'bank' ? 'Bank Transfer' : 'Mobile Money';
@@ -563,6 +629,16 @@ function viewUser(id) {
     document.getElementById('view_payout_phone').textContent = row.dataset.payout_phone || 'N/A';
 
     new bootstrap.Modal(document.getElementById('viewUserModal')).show();
+}
+
+function formatCloseRelative(row, position) {
+    const relationship = row.dataset['close_relative_' + position + '_relationship'] || '';
+    const name = row.dataset['close_relative_' + position + '_name'] || '';
+    const phone = row.dataset['close_relative_' + position + '_phone'] || '';
+    const location = row.dataset['close_relative_' + position + '_location'] || '';
+    const email = row.dataset['close_relative_' + position + '_email'] || '';
+    const parts = [relationship, name, phone, location, email].filter(Boolean);
+    return parts.length > 0 ? parts.join(' | ') : 'N/A';
 }
 
 function editUser(id) {
@@ -580,6 +656,16 @@ function editUser(id) {
     document.getElementById('edit_gender').value = row.dataset.gender || '';
     document.getElementById('edit_phone').value = row.dataset.phone || '';
     document.getElementById('edit_email').value = row.dataset.email || '';
+    document.getElementById('edit_close_relative_1_relationship').value = row.dataset.close_relative_1_relationship || '';
+    document.getElementById('edit_close_relative_1_name').value = row.dataset.close_relative_1_name || '';
+    document.getElementById('edit_close_relative_1_phone').value = row.dataset.close_relative_1_phone || '';
+    document.getElementById('edit_close_relative_1_location').value = row.dataset.close_relative_1_location || '';
+    document.getElementById('edit_close_relative_1_email').value = row.dataset.close_relative_1_email || '';
+    document.getElementById('edit_close_relative_2_relationship').value = row.dataset.close_relative_2_relationship || '';
+    document.getElementById('edit_close_relative_2_name').value = row.dataset.close_relative_2_name || '';
+    document.getElementById('edit_close_relative_2_phone').value = row.dataset.close_relative_2_phone || '';
+    document.getElementById('edit_close_relative_2_location').value = row.dataset.close_relative_2_location || '';
+    document.getElementById('edit_close_relative_2_email').value = row.dataset.close_relative_2_email || '';
     document.getElementById('edit_bank_name').value = row.dataset.bank_name || '';
     document.getElementById('edit_bank_account_number').value = row.dataset.bank_account_number || '';
     document.getElementById('edit_payout_phone').value = row.dataset.payout_phone || '';
@@ -601,7 +687,7 @@ function resetPassword(id) {
     if (row) {
         const fullName = row.dataset.full_name || 'This user';
         const phone = row.dataset.phone || 'no phone number saved';
-        document.getElementById('resetPasswordMessage').textContent = fullName + ' will receive a new temporary password by SMS at ' + phone + '.';
+        document.getElementById('resetPasswordMessage').textContent = fullName + ' will receive a one-time temporary password by SMS at ' + phone + '.';
     }
     new bootstrap.Modal(document.getElementById('resetPasswordModal')).show();
 }
@@ -649,7 +735,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function normalizeTanzaniaPhone(value) {
         const digits = String(value || '').replace(/\D/g, '');
         if (digits === '') {
-            return '255';
+            return '';
         }
 
         if (digits.startsWith('255')) {
@@ -667,20 +753,24 @@ document.addEventListener('DOMContentLoaded', function() {
         return ('255' + digits.replace(/^255+/, '')).slice(0, 12);
     }
 
-    const editPayoutPhoneInput = document.getElementById('edit_payout_phone');
-    if (editPayoutPhoneInput) {
-        editPayoutPhoneInput.addEventListener('focus', function() {
-            editPayoutPhoneInput.value = normalizeTanzaniaPhone(editPayoutPhoneInput.value);
+    ['edit_payout_phone', 'edit_phone', 'edit_close_relative_1_phone', 'edit_close_relative_2_phone'].forEach(function(fieldId) {
+        const input = document.getElementById(fieldId);
+        if (!input) {
+            return;
+        }
+
+        input.addEventListener('focus', function() {
+            input.value = normalizeTanzaniaPhone(input.value);
         });
 
-        editPayoutPhoneInput.addEventListener('input', function() {
-            editPayoutPhoneInput.value = normalizeTanzaniaPhone(editPayoutPhoneInput.value);
+        input.addEventListener('input', function() {
+            input.value = normalizeTanzaniaPhone(input.value);
         });
 
-        editPayoutPhoneInput.addEventListener('blur', function() {
-            editPayoutPhoneInput.value = normalizeTanzaniaPhone(editPayoutPhoneInput.value);
+        input.addEventListener('blur', function() {
+            input.value = normalizeTanzaniaPhone(input.value);
         });
-    }
+    });
 
     bindUsernamePreview('edit_first_name', 'edit_last_name', 'edit_username');
 });

@@ -55,8 +55,8 @@ define('SESSION_NAME', 'JASSNET_SESSION');
 define('PASSWORD_MIN_LENGTH', 8);
 define('PASSWORD_EXPIRATION_DAYS', 28);
 define('PASSWORD_WARNING_DAYS', 5);
-define('LOGIN_OTP_EXPIRY_MINUTES', 5);
-define('LOGIN_OTP_RESEND_SECONDS', 60);
+define('LOGIN_OTP_EXPIRY_MINUTES', 2);
+define('LOGIN_OTP_RESEND_SECONDS', 0);
 define('LOGIN_OTP_MAX_ATTEMPTS', 5);
 
 // File Upload Settings
@@ -70,6 +70,23 @@ define('SMS_API_USERNAME', getenv('SMS_API_USERNAME') ?: 'jassnet012');
 define('SMS_API_PASSWORD', getenv('SMS_API_PASSWORD') ?: 'p4_sm661');
 define('SMS_API_KEY', getenv('SMS_API_KEY') ?: '');
 define('SMS_PROVIDER', getenv('SMS_PROVIDER') ?: 'custom');
+
+// Email Configuration
+define('MAIL_ENABLED', getenv('MAIL_ENABLED') !== false
+    ? filter_var(getenv('MAIL_ENABLED'), FILTER_VALIDATE_BOOLEAN)
+    : true
+);
+define('MAIL_HOST', getenv('MAIL_HOST') ?: 'smtp.gmail.com');
+define('MAIL_SMTP_AUTH', getenv('MAIL_SMTP_AUTH') !== false
+    ? filter_var(getenv('MAIL_SMTP_AUTH'), FILTER_VALIDATE_BOOLEAN)
+    : true
+);
+define('MAIL_USERNAME', getenv('MAIL_USERNAME') ?: 'jassnetc@gmail.com');
+define('MAIL_PASSWORD', getenv('MAIL_PASSWORD') ?: 'xuqr hqdi ionp ccub');
+define('MAIL_ENCRYPTION', getenv('MAIL_ENCRYPTION') ?: 'tls');
+define('MAIL_PORT', (int) (getenv('MAIL_PORT') ?: 587));
+define('MAIL_FROM_EMAIL', getenv('MAIL_FROM_EMAIL') ?: MAIL_USERNAME);
+define('MAIL_FROM_NAME', getenv('MAIL_FROM_NAME') ?: 'JASSNET ERMS');
 
 // WhatsApp Configuration
 define('WHATSAPP_API_VERSION', getenv('WHATSAPP_API_VERSION') ?: 'v22.0');

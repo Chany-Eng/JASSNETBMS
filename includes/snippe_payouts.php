@@ -1,5 +1,51 @@
 <?php
 
+function snippeSchemaConnectionKey(mysqli $conn): string
+{
+    return function_exists('spl_object_id') ? (string) spl_object_id($conn) : spl_object_hash($conn);
+}
+
+function snippeCanAutoMigrateSchema(): bool
+{
+    $configured = getenv('SNIPPE_SCHEMA_AUTO_MIGRATE');
+    if ($configured !== false) {
+        return filter_var($configured, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    return PHP_SAPI === 'cli';
+}
+
+function snippeTableExists(mysqli $conn, string $tableName): bool
+{
+    $safeTable = $conn->real_escape_string($tableName);
+    $result = $conn->query("SHOW TABLES LIKE '{$safeTable}'");
+    return $result instanceof mysqli_result && $result->num_rows > 0;
+}
+
+function snippeColumnExists(mysqli $conn, string $tableName, string $columnName): bool
+{
+    if (!snippeTableExists($conn, $tableName)) {
+        return false;
+    }
+
+    $safeTable = $conn->real_escape_string($tableName);
+    $safeColumn = $conn->real_escape_string($columnName);
+    $result = $conn->query("SHOW COLUMNS FROM {$safeTable} LIKE '{$safeColumn}'");
+    return $result instanceof mysqli_result && $result->num_rows > 0;
+}
+
+function snippeIndexExists(mysqli $conn, string $tableName, string $indexName): bool
+{
+    if (!snippeTableExists($conn, $tableName)) {
+        return false;
+    }
+
+    $safeTable = $conn->real_escape_string($tableName);
+    $safeIndex = $conn->real_escape_string($indexName);
+    $result = $conn->query("SHOW INDEX FROM {$safeTable} WHERE Key_name = '{$safeIndex}'");
+    return $result instanceof mysqli_result && $result->num_rows > 0;
+}
+
 function snippeGetSupportedBanks(): array
 {
     return [
@@ -114,6 +160,17 @@ function snippeRenderBankOptions(string $selected = ''): string
 
 function snippeEnsureUserPayoutFields(mysqli $conn): void
 {
+    static $ensuredConnections = [];
+
+    if (!snippeCanAutoMigrateSchema()) {
+        return;
+    }
+
+    $connectionKey = snippeSchemaConnectionKey($conn);
+    if (isset($ensuredConnections[$connectionKey])) {
+        return;
+    }
+
     $columns = [
         'first_name' => "ALTER TABLE users ADD COLUMN first_name VARCHAR(100) NULL AFTER full_name",
         'middle_name' => "ALTER TABLE users ADD COLUMN middle_name VARCHAR(100) NULL AFTER first_name",
@@ -127,33 +184,28 @@ function snippeEnsureUserPayoutFields(mysqli $conn): void
     ];
 
     foreach ($columns as $column => $sql) {
-        $result = $conn->query("SHOW COLUMNS FROM users LIKE '{$column}'");
-        if ($result && $result->num_rows === 0) {
+        if (!snippeColumnExists($conn, 'users', $column)) {
             $conn->query($sql);
         }
     }
+
+    $ensuredConnections[$connectionKey] = true;
 }
 
 function snippeEnsurePayoutTables(mysqli $conn): void
 {
+    static $ensuredConnections = [];
+
+    if (!snippeCanAutoMigrateSchema()) {
+        return;
+    }
+
+    $connectionKey = snippeSchemaConnectionKey($conn);
+    if (isset($ensuredConnections[$connectionKey])) {
+        return;
+    }
+
     snippeEnsureUserPayoutFields($conn);
-
-    $expenseRequestColumn = $conn->query("SHOW COLUMNS FROM snippe_payouts LIKE 'expense_request_id'");
-    $expenseRequestInfo = $expenseRequestColumn ? $expenseRequestColumn->fetch_assoc() : null;
-    if ($expenseRequestInfo && stripos((string) ($expenseRequestInfo['Null'] ?? ''), 'yes') === false) {
-        $conn->query("ALTER TABLE snippe_payouts MODIFY COLUMN expense_request_id INT NULL");
-    }
-
-    $stationRequestColumn = $conn->query("SHOW COLUMNS FROM snippe_payouts LIKE 'station_request_id'");
-    if ($stationRequestColumn && $stationRequestColumn->num_rows === 0) {
-        $conn->query("ALTER TABLE snippe_payouts ADD COLUMN station_request_id INT NULL AFTER expense_request_id");
-        $conn->query("ALTER TABLE snippe_payouts ADD KEY idx_snippe_payout_station (station_request_id)");
-    }
-
-    $failureReasonColumn = $conn->query("SHOW COLUMNS FROM snippe_payouts LIKE 'failure_reason'");
-    if ($failureReasonColumn && $failureReasonColumn->num_rows === 0) {
-        $conn->query("ALTER TABLE snippe_payouts ADD COLUMN failure_reason VARCHAR(255) NULL AFTER narration");
-    }
 
     $conn->query(
         "CREATE TABLE IF NOT EXISTS snippe_payouts (
@@ -189,6 +241,26 @@ function snippeEnsurePayoutTables(mysqli $conn): void
             KEY idx_snippe_payout_station (station_request_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+
+    $expenseRequestColumn = $conn->query("SHOW COLUMNS FROM snippe_payouts LIKE 'expense_request_id'");
+    $expenseRequestInfo = $expenseRequestColumn instanceof mysqli_result ? $expenseRequestColumn->fetch_assoc() : null;
+    if ($expenseRequestInfo && stripos((string) ($expenseRequestInfo['Null'] ?? ''), 'yes') === false) {
+        $conn->query("ALTER TABLE snippe_payouts MODIFY COLUMN expense_request_id INT NULL");
+    }
+
+    if (!snippeColumnExists($conn, 'snippe_payouts', 'station_request_id')) {
+        $conn->query("ALTER TABLE snippe_payouts ADD COLUMN station_request_id INT NULL AFTER expense_request_id");
+    }
+
+    if (!snippeIndexExists($conn, 'snippe_payouts', 'idx_snippe_payout_station')) {
+        $conn->query("ALTER TABLE snippe_payouts ADD KEY idx_snippe_payout_station (station_request_id)");
+    }
+
+    if (!snippeColumnExists($conn, 'snippe_payouts', 'failure_reason')) {
+        $conn->query("ALTER TABLE snippe_payouts ADD COLUMN failure_reason VARCHAR(255) NULL AFTER narration");
+    }
+
+    $ensuredConnections[$connectionKey] = true;
 }
 
 function snippePayoutNested(array $data, string $path, $default = '')

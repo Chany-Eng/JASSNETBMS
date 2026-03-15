@@ -26,6 +26,17 @@ class User extends BaseModel
         'phone',
         'address',
         'password_last_changed',
+        'must_change_password',
+        'close_relative_1_relationship',
+        'close_relative_1_name',
+        'close_relative_1_phone',
+        'close_relative_1_location',
+        'close_relative_1_email',
+        'close_relative_2_relationship',
+        'close_relative_2_name',
+        'close_relative_2_phone',
+        'close_relative_2_location',
+        'close_relative_2_email',
     ];
     protected $timestamps = true;
 
@@ -323,24 +334,26 @@ class User extends BaseModel
      */
     public function sendLoginOtpSms($user, $otpCode)
     {
-        if (!$user || trim((string) ($user['phone'] ?? '')) === '') {
+        if (!$user) {
             return false;
         }
 
         $this->ensureSecuritySendersLoaded();
 
-        $phone = $this->normalizeSecurityPhone((string) $user['phone']);
-        if ($phone === '') {
+        $phone = $this->normalizeSecurityPhone((string) ($user['phone'] ?? ''));
+        $email = trim((string) ($user['email'] ?? ''));
+        if ($phone === '' && $email === '') {
             return false;
         }
 
         $recipientName = trim((string) ($user['full_name'] ?? ($user['username'] ?? 'User')));
         $message = 'ERMS OTP for ' . $recipientName . ': code yako ya kuingia ni ' . $otpCode . '. Ita-expire baada ya dakika ' . (int) LOGIN_OTP_EXPIRY_MINUTES . '.';
 
-        $responses = $this->sendOtpChannels($phone, $message, (string) $otpCode);
+        $responses = $this->sendOtpChannels($phone, $email, $recipientName, $message, (string) $otpCode);
         $channelSummary = $this->buildSecurityChannelSummary($responses);
         $wasSuccessful = $this->didAnySecurityChannelSucceed($responses);
-        $this->logSecurityEvent('LOGIN_OTP_SMS', 'Login OTP notification ' . ($wasSuccessful ? 'sent' : 'failed') . ' to ' . $phone . '. Channels: ' . $channelSummary, $user);
+        $destinationSummary = implode(', ', array_filter([$phone !== '' ? $phone : null, $email !== '' ? $email : null])) ?: 'no destination';
+        $this->logSecurityEvent('LOGIN_OTP_SMS', 'Login OTP notification ' . ($wasSuccessful ? 'sent' : 'failed') . ' to ' . $destinationSummary . '. Channels: ' . $channelSummary, $user);
 
         return $wasSuccessful;
     }
@@ -390,6 +403,7 @@ class User extends BaseModel
         return $this->update($userId, [
             'password' => $hashedPassword,
             'password_last_changed' => date(DATETIME_FORMAT),
+            'must_change_password' => 0,
         ]);
     }
 
@@ -599,8 +613,24 @@ class User extends BaseModel
             require_once APP_ROOT . '/includes/jassnet_sms.php';
         }
 
+        if (!isset($GLOBALS['smsSender']) && isset($smsSender)) {
+            $GLOBALS['smsSender'] = $smsSender;
+        }
+
         if (!\class_exists('JASSnetWhatsAppSender', false)) {
             require_once APP_ROOT . '/includes/jassnet_whatsapp.php';
+        }
+
+        if (!isset($GLOBALS['whatsAppSender']) && isset($whatsAppSender)) {
+            $GLOBALS['whatsAppSender'] = $whatsAppSender;
+        }
+
+        if (!\class_exists('JASSnetMailSender', false)) {
+            require_once APP_ROOT . '/includes/jassnet_mail.php';
+        }
+
+        if (!isset($GLOBALS['mailSender']) && isset($mailSender)) {
+            $GLOBALS['mailSender'] = $mailSender;
         }
     }
 
@@ -619,15 +649,15 @@ class User extends BaseModel
         return $responses;
     }
 
-    private function sendOtpChannels(string $phone, string $message, string $otpCode): array
+    private function sendOtpChannels(string $phone, string $email, string $recipientName, string $message, string $otpCode): array
     {
         $responses = [];
 
-        if (isset($GLOBALS['smsSender'])) {
+        if ($phone !== '' && isset($GLOBALS['smsSender'])) {
             $responses['sms'] = $GLOBALS['smsSender']->sendSMS($phone, $message, \defined('SENDER_ID') ? SENDER_ID : 'JASSNET');
         }
 
-        if (isset($GLOBALS['whatsAppSender'])) {
+        if ($phone !== '' && isset($GLOBALS['whatsAppSender'])) {
             if (\defined('WHATSAPP_OTP_TEMPLATE') && trim((string) WHATSAPP_OTP_TEMPLATE) !== '') {
                 $responses['whatsapp'] = $GLOBALS['whatsAppSender']->sendOtpTemplateMessage($phone, $otpCode, (int) LOGIN_OTP_EXPIRY_MINUTES);
             } else {
@@ -635,6 +665,10 @@ class User extends BaseModel
                 $fallback['warning'] = 'otp_text_requires_open_whatsapp_window_or_approved_template';
                 $responses['whatsapp'] = $fallback;
             }
+        }
+
+        if ($email !== '' && isset($GLOBALS['mailSender'])) {
+            $responses['email'] = $GLOBALS['mailSender']->sendOtpEmail($email, $recipientName, $otpCode, (int) LOGIN_OTP_EXPIRY_MINUTES);
         }
 
         return $responses;

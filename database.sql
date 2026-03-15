@@ -21,6 +21,17 @@ CREATE TABLE users (
     profile_photo VARCHAR(255),
     employee_id VARCHAR(50) UNIQUE,
     password_last_changed DATE DEFAULT CURRENT_DATE,
+    must_change_password BOOLEAN DEFAULT FALSE,
+    close_relative_1_relationship VARCHAR(50),
+    close_relative_1_name VARCHAR(150),
+    close_relative_1_phone VARCHAR(20),
+    close_relative_1_location VARCHAR(150),
+    close_relative_1_email VARCHAR(150),
+    close_relative_2_relationship VARCHAR(50),
+    close_relative_2_name VARCHAR(150),
+    close_relative_2_phone VARCHAR(20),
+    close_relative_2_location VARCHAR(150),
+    close_relative_2_email VARCHAR(150),
     is_active BOOLEAN DEFAULT TRUE
 );
 

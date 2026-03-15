@@ -79,6 +79,11 @@ class AuthController extends BaseController
             return;
         }
 
+        if ($authAction === 'cancel_otp') {
+            $this->cancelOtpSubmit();
+            return;
+        }
+
         // Validate inputs
         $username = $this->sanitize($this->post('username'));
         $password = $this->post('password');
@@ -140,11 +145,11 @@ class AuthController extends BaseController
         $this->userModel->clearFailedLoginAttempts($username);
 
         if (!$this->startOtpChallenge($user, $remember)) {
-            $this->error('OTP haikuweza kutumwa kwenye SMS au WhatsApp. Wasiliana na administrator.');
+            $this->error('OTP haikuweza kutumwa kwenye SMS, WhatsApp, au Email. Wasiliana na administrator.');
             $this->redirect(APP_URL . '/index.php');
         }
 
-        $this->success('Tumekutumia OTP kwenye SMS yako, na WhatsApp pia ikiwa channel hiyo iko tayari kwa account yako. Ingiza code kuendelea.');
+        $this->success('Tumekutumia OTP kwenye channels zako zilizohifadhiwa kama SMS, WhatsApp, au Email. Ingiza code kuendelea.');
         $this->redirect(APP_URL . '/index.php');
     }
 
@@ -194,12 +199,20 @@ class AuthController extends BaseController
         }
 
         $this->clearPendingOtpSession();
+        if (!empty($user['must_change_password'])) {
+            $_SESSION['temp_user_id'] = (int) $user['id'];
+            $_SESSION['temp_force_password_change'] = true;
+            $this->logActivity('LOGIN_PASSWORD_CHANGE_REQUIRED', 'User authenticated with temporary password and must change it before accessing the system', 'users', $user['id']);
+            $this->warning('Badili temporary password yako kwanza ndipo uendelee kutumia mfumo.');
+            $this->redirect(APP_URL . '/change_password.php?expired=1');
+        }
+
         $this->completeLogin($user, !empty($pendingAuth['remember']));
         $this->redirect(APP_URL . '/dashboard.php');
     }
 
     /**
-    * Resend OTP for a pending login challenge.
+     * Resend OTP for a pending login challenge.
      *
      * @return void
      */
@@ -211,20 +224,25 @@ class AuthController extends BaseController
             $this->redirect(APP_URL . '/index.php');
         }
 
-        $sentAt = (int) ($pendingAuth['sent_at'] ?? 0);
-        $secondsSinceLastSend = time() - $sentAt;
-        if ($sentAt > 0 && $secondsSinceLastSend < LOGIN_OTP_RESEND_SECONDS) {
-            $this->warning('Subiri sekunde ' . (LOGIN_OTP_RESEND_SECONDS - $secondsSinceLastSend) . ' kabla ya kutuma OTP tena.');
-            $this->redirect(APP_URL . '/index.php');
-        }
-
         $user = $this->userModel->find((int) $pendingAuth['user_id']);
         if (!$user || !$this->refreshOtpChallenge($user)) {
-            $this->error('OTP haikuweza kutumwa tena kwenye SMS au WhatsApp.');
+            $this->error('OTP haikuweza kutumwa tena kwenye SMS, WhatsApp, au Email.');
             $this->redirect(APP_URL . '/index.php');
         }
 
-        $this->success('OTP mpya imetumwa kwenye SMS yako, na WhatsApp pia ikiwa channel hiyo iko tayari kwa account yako.');
+        $this->success('OTP mpya imetumwa kwenye channels zako zilizohifadhiwa kama SMS, WhatsApp, au Email.');
+        $this->redirect(APP_URL . '/index.php');
+    }
+
+    /**
+     * Cancel the current OTP challenge and return to the login form.
+     *
+     * @return void
+     */
+    private function cancelOtpSubmit()
+    {
+        $this->clearPendingOtpSession();
+        $this->warning('OTP verification imefutwa. Ingia tena kwa username na password.');
         $this->redirect(APP_URL . '/index.php');
     }
 

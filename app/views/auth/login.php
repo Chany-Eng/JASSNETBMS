@@ -367,7 +367,7 @@ $otpRemainingSeconds = (int) ($otpContext['remaining_seconds'] ?? 0);
                                     <h3 class="login-form-title"><?= $otpRequired ? 'Confirm OTP code' : 'Sign in to continue' ?></h3>
                                     <p class="login-form-copy">
                                         <?php if ($otpRequired): ?>
-                                            OTP imetumwa kwa <?= htmlspecialchars((string) ($otpContext['masked_phone'] ?? 'namba yako')) ?> kupitia SMS, na WhatsApp pia ikiwa channel hiyo iko tayari kwenye account yako. Weka code ya tarakimu 6 ili kufungua workspace yako.
+                                            OTP imetumwa kwa contact zako zilizohifadhiwa kama SMS, WhatsApp, au Email. Weka code ya tarakimu 6 ili kufungua workspace yako.
                                         <?php else: ?>
                                             Use your ERMS username and password to access the professional admin dashboard.
                                         <?php endif; ?>
@@ -389,10 +389,16 @@ $otpRemainingSeconds = (int) ($otpContext['remaining_seconds'] ?? 0);
                                         </div>
                                         <button type="submit" class="btn btn-primary w-100">Verify OTP</button>
                                     </form>
-                                    <form method="POST" action="<?= APP_URL ?>/index.php" class="mt-3">
-                                        <input type="hidden" name="auth_action" value="resend_otp">
-                                        <button type="submit" class="btn btn-outline-secondary w-100">Resend OTP</button>
-                                    </form>
+                                    <div class="d-grid gap-2 mt-3">
+                                        <form method="POST" action="<?= APP_URL ?>/index.php">
+                                            <input type="hidden" name="auth_action" value="resend_otp">
+                                            <button type="submit" class="btn btn-outline-secondary w-100">Resend OTP</button>
+                                        </form>
+                                        <form method="POST" action="<?= APP_URL ?>/index.php">
+                                            <input type="hidden" name="auth_action" value="cancel_otp">
+                                            <button type="submit" class="btn btn-outline-dark w-100">Back</button>
+                                        </form>
+                                    </div>
                                     <div class="small text-muted mt-3 text-center">Session: <?= htmlspecialchars((string) ($otpContext['name'] ?? 'User')) ?><?php if ($otpRemainingSeconds > 0): ?> | <?= (int) ceil($otpRemainingSeconds / 60) ?> min left<?php endif; ?></div>
                                     <?php if (!empty($otpContext['otp_code'])): ?>
                                         <div class="small text-center mt-2">
@@ -429,7 +435,7 @@ $otpRemainingSeconds = (int) ($otpContext['remaining_seconds'] ?? 0);
 
                                 <div class="login-help-strip">
                                     <div class="fw-semibold mb-1"><i class="fas fa-shield-halved me-2 text-primary"></i>Secure internal access</div>
-                                    <div class="small mb-0"><?php if ($otpRequired): ?>Baada ya password sahihi, ERMS hutuma OTP kwa SMS, na WhatsApp pia ikiwa account ya biashara ina template au chat window inayoruhusu delivery.<?php else: ?>If your session expires or your password was reset by an administrator, sign in again with your latest credentials.<?php endif; ?></div>
+                                    <div class="small mb-0"><?php if ($otpRequired): ?>Baada ya password sahihi, ERMS hutuma OTP kwa SMS, WhatsApp, na Email kulingana na contact zilizohifadhiwa na rules za delivery za kila channel.<?php else: ?>If your session expires or your password was reset by an administrator, sign in again with your latest credentials.<?php endif; ?></div>
                                 </div>
 
                                 <div class="login-form-footer">

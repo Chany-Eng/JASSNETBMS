@@ -1,8 +1,11 @@
 <?php
 require_once 'includes/functions.php';
 
+ensureUserIdentitySchema($conn);
+
 $user = null;
 $expired = isset($_GET['expired']);
+$temporaryPasswordFlow = $expired && !empty($_SESSION['temp_force_password_change']);
 
 if ($expired && isset($_SESSION['temp_user_id'])) {
     $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
@@ -32,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $error = 'Password must be at least 8 characters with uppercase, lowercase, number, and special character';
     } else {
         $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("UPDATE users SET password = ?, password_last_changed = CURDATE() WHERE id = ?");
+        $stmt = $conn->prepare("UPDATE users SET password = ?, password_last_changed = CURDATE(), must_change_password = 0 WHERE id = ?");
         $stmt->bind_param("si", $hashed_password, $user['id']);
         
         if ($stmt->execute()) {
@@ -40,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             
             if ($expired) {
                 unset($_SESSION['temp_user_id']);
+                unset($_SESSION['temp_force_password_change']);
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['username'] = $user['username'];
                 $_SESSION['full_name'] = $user['full_name'];
@@ -74,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <div class="card-body">
                         <?php if ($expired): ?>
                             <div class="alert alert-warning">
-                                <i class="fas fa-exclamation-triangle"></i> Your password has expired. You must change it to continue.
+                                <i class="fas fa-exclamation-triangle"></i> <?php echo $temporaryPasswordFlow ? 'You must change the temporary password before continuing.' : 'Your password has expired. You must change it to continue.'; ?>
                             </div>
                         <?php endif; ?>
                         

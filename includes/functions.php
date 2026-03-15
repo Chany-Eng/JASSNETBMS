@@ -74,6 +74,7 @@ function hasPermission($required_roles) {
 // SMS configuration and helper - using professional gateway wrapper
 require_once __DIR__ . '/jassnet_sms.php';
 require_once __DIR__ . '/jassnet_whatsapp.php';
+require_once __DIR__ . '/jassnet_mail.php';
 
 /**
  * Send an SMS via the JASSNET gateway.
@@ -119,6 +120,35 @@ function appNormalizeSmsPhone(string $phone): string
     }
 
     return '';
+}
+
+function appGenerateTemporaryPassword(int $length = 10): string
+{
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#$%';
+    $maxIndex = strlen($alphabet) - 1;
+    $password = '';
+
+    for ($index = 0; $index < $length; $index++) {
+        $password .= $alphabet[random_int(0, $maxIndex)];
+    }
+
+    return $password;
+}
+
+function appBuildCredentialSmsMessage(string $recipientName, string $username, string $plainPassword): string
+{
+    $name = trim($recipientName) !== '' ? trim($recipientName) : 'User';
+    return 'Karibu JASSNET ERMS ' . $name . '. Username yako ni ' . $username . ' na temporary password ni ' . $plainPassword . '. Password hii itatumika mara moja tu. Ukisha login kwa mara ya kwanza utatakiwa kuibadilisha kabla ya kuendelea.';
+}
+
+function appSendCredentialSms(string $phone, string $recipientName, string $username, string $plainPassword)
+{
+    $normalizedPhone = appNormalizeSmsPhone($phone);
+    if ($normalizedPhone === '') {
+        return null;
+    }
+
+    return jassnet_sms($normalizedPhone, appBuildCredentialSmsMessage($recipientName, $username, $plainPassword));
 }
 
 function appSendTextChannelsToPhone(string $phone, string $message): array
@@ -303,6 +333,30 @@ function ensureUserIdentitySchema(mysqli $conn): void
 
         if (dbColumnExists($conn, 'users', 'address')) {
             $conn->query("UPDATE users SET location = NULLIF(TRIM(address), '') WHERE (location IS NULL OR location = '') AND address IS NOT NULL AND TRIM(address) <> ''");
+        }
+    }
+
+    if (!dbColumnExists($conn, 'users', 'must_change_password')) {
+        $afterColumn = dbColumnExists($conn, 'users', 'password_last_changed') ? 'password_last_changed' : 'password';
+        $conn->query("ALTER TABLE users ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0 AFTER {$afterColumn}");
+    }
+
+    $closeRelativeColumns = [
+        'close_relative_1_relationship' => "ALTER TABLE users ADD COLUMN close_relative_1_relationship VARCHAR(50) NULL AFTER email",
+        'close_relative_1_name' => "ALTER TABLE users ADD COLUMN close_relative_1_name VARCHAR(150) NULL AFTER close_relative_1_relationship",
+        'close_relative_1_phone' => "ALTER TABLE users ADD COLUMN close_relative_1_phone VARCHAR(20) NULL AFTER close_relative_1_name",
+        'close_relative_1_location' => "ALTER TABLE users ADD COLUMN close_relative_1_location VARCHAR(150) NULL AFTER close_relative_1_phone",
+        'close_relative_1_email' => "ALTER TABLE users ADD COLUMN close_relative_1_email VARCHAR(150) NULL AFTER close_relative_1_location",
+        'close_relative_2_relationship' => "ALTER TABLE users ADD COLUMN close_relative_2_relationship VARCHAR(50) NULL AFTER close_relative_1_email",
+        'close_relative_2_name' => "ALTER TABLE users ADD COLUMN close_relative_2_name VARCHAR(150) NULL AFTER close_relative_2_relationship",
+        'close_relative_2_phone' => "ALTER TABLE users ADD COLUMN close_relative_2_phone VARCHAR(20) NULL AFTER close_relative_2_name",
+        'close_relative_2_location' => "ALTER TABLE users ADD COLUMN close_relative_2_location VARCHAR(150) NULL AFTER close_relative_2_phone",
+        'close_relative_2_email' => "ALTER TABLE users ADD COLUMN close_relative_2_email VARCHAR(150) NULL AFTER close_relative_2_location",
+    ];
+
+    foreach ($closeRelativeColumns as $columnName => $alterSql) {
+        if (!dbColumnExists($conn, 'users', $columnName)) {
+            $conn->query($alterSql);
         }
     }
 }

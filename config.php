@@ -32,6 +32,48 @@ if (!defined('SMS_API_PASSWORD')) {
     define('SMS_API_PASSWORD', getenv('SMS_API_PASSWORD') ?: 'p4_sm661');
 }
 
+if (!defined('MAIL_ENABLED')) {
+    define('MAIL_ENABLED', getenv('MAIL_ENABLED') !== false
+        ? filter_var(getenv('MAIL_ENABLED'), FILTER_VALIDATE_BOOLEAN)
+        : true
+    );
+}
+
+if (!defined('MAIL_HOST')) {
+    define('MAIL_HOST', getenv('MAIL_HOST') ?: 'smtp.gmail.com');
+}
+
+if (!defined('MAIL_SMTP_AUTH')) {
+    define('MAIL_SMTP_AUTH', getenv('MAIL_SMTP_AUTH') !== false
+        ? filter_var(getenv('MAIL_SMTP_AUTH'), FILTER_VALIDATE_BOOLEAN)
+        : true
+    );
+}
+
+if (!defined('MAIL_USERNAME')) {
+    define('MAIL_USERNAME', getenv('MAIL_USERNAME') ?: 'jassnetc@gmail.com');
+}
+
+if (!defined('MAIL_PASSWORD')) {
+    define('MAIL_PASSWORD', getenv('MAIL_PASSWORD') ?: 'xuqr hqdi ionp ccub');
+}
+
+if (!defined('MAIL_ENCRYPTION')) {
+    define('MAIL_ENCRYPTION', getenv('MAIL_ENCRYPTION') ?: 'tls');
+}
+
+if (!defined('MAIL_PORT')) {
+    define('MAIL_PORT', (int) (getenv('MAIL_PORT') ?: 587));
+}
+
+if (!defined('MAIL_FROM_EMAIL')) {
+    define('MAIL_FROM_EMAIL', getenv('MAIL_FROM_EMAIL') ?: MAIL_USERNAME);
+}
+
+if (!defined('MAIL_FROM_NAME')) {
+    define('MAIL_FROM_NAME', getenv('MAIL_FROM_NAME') ?: 'JASSNET ERMS');
+}
+
 if (!defined('WHATSAPP_API_VERSION')) {
     define('WHATSAPP_API_VERSION', getenv('WHATSAPP_API_VERSION') ?: 'v22.0');
 }
