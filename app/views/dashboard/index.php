@@ -19,6 +19,7 @@ $canViewPayroll = !empty($permissions['can_view_payroll']);
 $recentActivities = $recent_activities ?? [];
 $reportLinks = $report_links ?? [];
 $roleNotices = $role_notices ?? [];
+$canViewRecentActivity = $hasRole(['Super Admin']);
 $userRoles = array_values(array_filter(array_map('trim', explode(',', (string) ($user['role'] ?? '')))));
 if ($userRoles === []) {
     $userRoles = ['User'];
@@ -1189,6 +1190,7 @@ $statusTone = static function (string $status): string {
         </div>
 
         <div class="row g-4 mt-1">
+            <?php if ($canViewRecentActivity): ?>
             <div class="col-xl-7">
                 <div class="dash-panel">
                     <div class="dash-panel-header">
@@ -1223,7 +1225,8 @@ $statusTone = static function (string $status): string {
                     </div>
                 </div>
             </div>
-            <div class="col-xl-5">
+            <?php endif; ?>
+            <div class="<?= $canViewRecentActivity ? 'col-xl-5' : 'col-12' ?>">
                 <div class="dash-panel h-100">
                     <div class="dash-panel-header">
                         <div>

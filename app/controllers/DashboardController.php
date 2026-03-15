@@ -495,7 +495,7 @@ class DashboardController extends BaseController
 
     private function getRecentActivities(int $limit = 8): array
     {
-        if (!$this->hasPermission(['Super Admin', 'Director', 'Accountant', 'Manager'])) {
+        if (!$this->hasPermission(['Super Admin'])) {
             return [];
         }
 
