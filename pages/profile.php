@@ -85,6 +85,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <div class="alert alert-danger"><?php echo $error; ?></div>
 <?php endif; ?>
 
+<style>
+    .profile-role-badges {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0.45rem;
+        margin: 0.85rem 0 0.4rem;
+    }
+
+    .profile-role-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        background: #edf4fc;
+        border: 1px solid #d4e2f3;
+        color: #1d4f98;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+</style>
+
 <div class="row">
     <div class="col-md-4">
         <div class="card">
@@ -96,8 +118,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         <i class="fas fa-user fa-3x text-muted"></i>
                     </div>
                 <?php endif; ?>
+                <?php $profileRoles = appParseRoleList((string) ($user['role'] ?? '')); ?>
+                <?php $profileRoleCount = count($profileRoles); ?>
                 <h5><?php echo htmlspecialchars($user['full_name']); ?></h5>
                 <p class="text-muted"><?php echo htmlspecialchars(appFormatRoleList((string) ($user['role'] ?? ''))); ?></p>
+                <p class="text-muted mb-1">Assigned Roles: <?php echo $profileRoleCount; ?></p>
+                <?php if ($profileRoles !== []): ?>
+                    <div class="profile-role-badges">
+                        <?php foreach ($profileRoles as $profileRole): ?>
+                            <span class="profile-role-badge"><?php echo htmlspecialchars($profileRole); ?></span>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
                 <p class="text-muted">Employee ID: <?php echo htmlspecialchars($user['employee_id']); ?></p>
             </div>
         </div>
@@ -159,7 +191,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             <div class="mb-3">
                                 <label for="role" class="form-label">Roles</label>
                                 <input type="text" class="form-control" id="role" value="<?php echo htmlspecialchars(appFormatRoleList((string) ($user['role'] ?? ''))); ?>" readonly>
-                                <div class="form-text">Roles assigned by admin cannot be changed here</div>
+                                <div class="form-text"><?php echo appCountRoles((string) ($user['role'] ?? '')); ?> roles assigned by admin cannot be changed here</div>
                             </div>
                         </div>
                     </div>

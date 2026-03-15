@@ -120,6 +120,11 @@ function appGetCurrentSessionRoles(): array
     return appParseRoleList((string) ($_SESSION['role'] ?? ''));
 }
 
+function appCountRoles(string $roleValue): int
+{
+    return count(appParseRoleList($roleValue));
+}
+
 function appCurrentSessionHasRole(array $rolesToCheck): bool
 {
     $currentRoles = array_map('strtolower', appGetCurrentSessionRoles());
@@ -457,6 +462,15 @@ function ensureUserIdentitySchema(mysqli $conn): void
 {
     if (!dbTableExists($conn, 'users')) {
         return;
+    }
+
+    $roleColumn = $conn->query("SHOW COLUMNS FROM users LIKE 'role'");
+    if ($roleColumn instanceof mysqli_result) {
+        $roleDefinition = $roleColumn->fetch_assoc();
+        $roleType = strtolower((string) ($roleDefinition['Type'] ?? ''));
+        if (str_starts_with($roleType, 'enum(')) {
+            $conn->query("ALTER TABLE users MODIFY COLUMN role VARCHAR(255) NOT NULL");
+        }
     }
 
     if (!dbColumnExists($conn, 'users', 'first_name')) {

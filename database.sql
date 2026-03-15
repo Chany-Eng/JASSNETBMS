@@ -8,7 +8,7 @@ CREATE TABLE users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
-    role ENUM('Sales', 'Technician', 'Store Keeper', 'Manager', 'Director', 'Accountant', 'Super Admin') NOT NULL,
+    role VARCHAR(255) NOT NULL,
     full_name VARCHAR(100) NOT NULL,
     gender VARCHAR(20),
     phone VARCHAR(20),

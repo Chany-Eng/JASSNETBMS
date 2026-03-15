@@ -464,6 +464,12 @@
                 </ul>
             </li>
             <?php endif; ?>
+            <li>
+                <a href="<?php echo $base_path; ?>pages/profile.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'profile.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-user-circle"></i>
+                    <span>My Profile</span>
+                </a>
+            </li>
             <?php if (hasPermission(['Director', 'Super Admin', 'Accountant'])): ?>
             <li>
                 <a href="<?php echo $base_path; ?>pages/reports.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'reports.php' ? 'active' : ''; ?>">
@@ -530,9 +536,16 @@
                     $displayName = trim((string) ($_SESSION['full_name'] ?? '')) !== '' ? (string) $_SESSION['full_name'] : (string) ($_SESSION['username'] ?? 'User');
                     $displayUsername = trim((string) ($_SESSION['username'] ?? ''));
                     $displayRole = appFormatRoleList((string) ($_SESSION['role'] ?? ''));
+                    $displayRoleCount = appCountRoles((string) ($_SESSION['role'] ?? ''));
                     $displayMeta = $displayRole;
+                    if ($displayRoleCount > 0) {
+                        $displayMeta = $displayRole . ' • ' . $displayRoleCount . ' ' . ($displayRoleCount === 1 ? 'role' : 'roles');
+                    }
                     if ($displayUsername !== '' && strcasecmp($displayName, $displayUsername) !== 0) {
                         $displayMeta = '@' . $displayUsername . ' • ' . $displayRole;
+                        if ($displayRoleCount > 0) {
+                            $displayMeta .= ' • ' . $displayRoleCount . ' ' . ($displayRoleCount === 1 ? 'role' : 'roles');
+                        }
                     }
                     $profilePhoto = $_SESSION['profile_photo'] ?? '';
                     if (!$profilePhoto && function_exists('getCurrentUser')) {
@@ -558,6 +571,7 @@
                     }
                     ?>
                     <span class="app-topbar-chip"><i class="fas fa-calendar-day"></i> <?php echo date('d M Y'); ?></span>
+                    <span class="app-topbar-chip"><i class="fas fa-user-shield"></i> <?php echo $displayRoleCount; ?> <?php echo $displayRoleCount === 1 ? 'Role' : 'Roles'; ?></span>
                     <div class="dropdown me-3">
                         <button class="btn app-icon-button position-relative" type="button" id="notificationDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="fas fa-bell"></i>

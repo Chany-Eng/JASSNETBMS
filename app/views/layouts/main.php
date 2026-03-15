@@ -399,6 +399,12 @@
                 </ul>
             </li>
             <?php endif; ?>
+            <li>
+                <a href="<?= APP_URL ?>/pages/profile.php" class="<?= basename($_SERVER['PHP_SELF']) == 'profile.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-user-circle"></i>
+                    <span>My Profile</span>
+                </a>
+            </li>
             <?php if ($controller->hasPermission(['Director', 'Super Admin', 'Accountant'])): ?>
             <li>
                 <a href="<?= APP_URL ?>/pages/reports.php" class="<?= basename($_SERVER['PHP_SELF']) == 'reports.php' ? 'active' : ''; ?>">
@@ -466,9 +472,16 @@
                         $displayName = trim((string) ($user['full_name'] ?? '')) !== '' ? (string) $user['full_name'] : (string) ($user['username'] ?? 'User');
                         $displayUsername = trim((string) ($user['username'] ?? ''));
                         $displayRole = appFormatRoleList((string) ($user['role'] ?? ''));
+                        $displayRoleCount = appCountRoles((string) ($user['role'] ?? ''));
                         $displayMeta = $displayRole;
+                        if ($displayRoleCount > 0) {
+                            $displayMeta = $displayRole . ' • ' . $displayRoleCount . ' ' . ($displayRoleCount === 1 ? 'role' : 'roles');
+                        }
                         if ($displayUsername !== '' && strcasecmp($displayName, $displayUsername) !== 0) {
                             $displayMeta = '@' . $displayUsername . ' • ' . $displayRole;
+                            if ($displayRoleCount > 0) {
+                                $displayMeta .= ' • ' . $displayRoleCount . ' ' . ($displayRoleCount === 1 ? 'role' : 'roles');
+                            }
                         }
                         $profilePhoto = $user['profile_photo'] ?? '';
                         $actionNotifications = (isset($conn) && function_exists('getUserActionNotifications')) ? getUserActionNotifications($conn) : [];
@@ -489,6 +502,7 @@
                             $notificationSubheading = 'Review high-level approvals and pending escalations.';
                         }
                         ?>
+                        <span class="app-topbar-chip"><i class="fas fa-user-shield"></i> <?= $displayRoleCount ?> <?= $displayRoleCount === 1 ? 'Role' : 'Roles' ?></span>
                         <div class="dropdown me-3">
                             <button class="btn app-icon-button position-relative" type="button" id="notificationDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="fas fa-bell"></i>

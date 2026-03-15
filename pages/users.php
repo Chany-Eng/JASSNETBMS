@@ -74,7 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $conn->prepare('UPDATE users SET username = ?, role = ?, first_name = ?, middle_name = ?, last_name = ?, full_name = ?, employee_id = ?, id_number = ?, location = ?, gender = ?, phone = ?, email = ?, close_relative_1_relationship = ?, close_relative_1_name = ?, close_relative_1_phone = ?, close_relative_1_location = ?, close_relative_1_email = ?, close_relative_2_relationship = ?, close_relative_2_name = ?, close_relative_2_phone = ?, close_relative_2_location = ?, close_relative_2_email = ?, bank_name = ?, bank_account_number = ?, payout_phone = ?, preferred_payout_channel = ?, is_active = ? WHERE id = ?');
         }
         if (!$error && $stmt) {
-            $stmt->bind_param('sssssssssssssssssssssssssssii', $username, $role, $first_name, $middle_name, $last_name, $full_name, $employee_id, $id_number, $location, $gender, $phone, $email, $closeRelativeOne['relationship'], $closeRelativeOne['name'], $closeRelativeOne['phone'], $closeRelativeOne['location'], $closeRelativeOne['email'], $closeRelativeTwo['relationship'], $closeRelativeTwo['name'], $closeRelativeTwo['phone'], $closeRelativeTwo['location'], $closeRelativeTwo['email'], $bank_name, $bank_account_number, $payout_phone, $preferred_payout_channel, $is_active, $user_id);
+            $bindTypes = str_repeat('s', 26) . 'ii';
+            $stmt->bind_param($bindTypes, $username, $role, $first_name, $middle_name, $last_name, $full_name, $employee_id, $id_number, $location, $gender, $phone, $email, $closeRelativeOne['relationship'], $closeRelativeOne['name'], $closeRelativeOne['phone'], $closeRelativeOne['location'], $closeRelativeOne['email'], $closeRelativeTwo['relationship'], $closeRelativeTwo['name'], $closeRelativeTwo['phone'], $closeRelativeTwo['location'], $closeRelativeTwo['email'], $bank_name, $bank_account_number, $payout_phone, $preferred_payout_channel, $is_active, $user_id);
             if ($stmt->execute()) {
                 appLogActivity($conn, 'UPDATE_USER', 'Updated user account for ' . $full_name, 'users', $user_id);
                 $_SESSION['success_message'] = 'User updated successfully';
@@ -283,6 +284,91 @@ if (!$users) {
     .field-prefix-group .form-control {
         border-radius: 0 0.375rem 0.375rem 0;
     }
+
+    .users-table-wrap {
+        overflow-x: auto;
+    }
+
+    .users-table {
+        min-width: 1420px;
+        margin-bottom: 0;
+        vertical-align: middle;
+    }
+
+    .users-table th {
+        white-space: nowrap;
+        font-size: 0.78rem;
+    }
+
+    .users-table td {
+        vertical-align: middle;
+    }
+
+    .users-table .user-name-cell {
+        min-width: 200px;
+        font-weight: 700;
+        color: #223047;
+    }
+
+    .users-table .user-role-cell {
+        min-width: 220px;
+    }
+
+    .users-table .user-contact-cell {
+        min-width: 180px;
+    }
+
+    .users-table .user-actions-cell {
+        min-width: 250px;
+    }
+
+    .user-role-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+
+    .user-role-count {
+        display: inline-flex;
+        align-items: center;
+        margin-bottom: 0.45rem;
+        padding: 0.28rem 0.58rem;
+        border-radius: 999px;
+        background: #223047;
+        color: #fff;
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .user-role-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.32rem 0.6rem;
+        border-radius: 999px;
+        background: #edf4fc;
+        color: #1d4f98;
+        border: 1px solid #d4e2f3;
+        font-size: 0.76rem;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .user-actions-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+    }
+
+    .user-actions-group .btn {
+        white-space: nowrap;
+    }
+
+    @media (max-width: 767.98px) {
+        .users-table {
+            min-width: 1200px;
+        }
+    }
 </style>
 
 <div class="row" id="users-list">
@@ -292,19 +378,16 @@ if (!$users) {
                 <h5><i class="fas fa-list"></i> Users</h5>
             </div>
             <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-striped table-modern table-workflow-actions">
+                <div class="table-responsive users-table-wrap">
+                    <table class="table table-striped table-modern table-workflow-actions users-table">
                         <thead>
                             <tr>
                                 <th>Name</th>
-                                <th>ID No.</th>
                                 <th>Username</th>
                                 <th>Employee ID</th>
-                                <th>Location</th>
                                 <th>Gender</th>
                                 <th>Role</th>
                                 <th>Phone</th>
-                                <th>Email</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
@@ -317,6 +400,8 @@ if (!$users) {
                                 <?php $middleName = trim((string) (($user['middle_name'] ?? '') !== '' ? $user['middle_name'] : ($nameParts['middle_name'] ?? ''))); ?>
                                 <?php $lastName = trim((string) (($user['last_name'] ?? '') !== '' ? $user['last_name'] : ($nameParts['last_name'] ?? ''))); ?>
                                 <?php $displayFullName = composeFullNameFromParts($firstName, $middleName, $lastName); ?>
+                                <?php $roleBadges = appParseRoleList((string) ($user['role'] ?? '')); ?>
+                                <?php $roleCount = count($roleBadges); ?>
                                 <tr id="userRow_<?php echo (int) $user['id']; ?>"
                                     data-username="<?php echo htmlspecialchars($user['username'] ?? ''); ?>"
                                     data-first_name="<?php echo htmlspecialchars($firstName); ?>"
@@ -345,33 +430,43 @@ if (!$users) {
                                     data-payout_phone="<?php echo htmlspecialchars($user['payout_phone'] ?? ''); ?>"
                                     data-preferred_payout_channel="<?php echo htmlspecialchars($user['preferred_payout_channel'] ?? 'mobile'); ?>"
                                     data-is_active="<?php echo (int) ($user['is_active'] ?? 0); ?>">
-                                    <td><?php echo htmlspecialchars($displayFullName); ?></td>
-                                    <td><?php echo htmlspecialchars(($user['id_number'] ?? '') ?: 'N/A'); ?></td>
+                                    <td class="user-name-cell"><?php echo htmlspecialchars($displayFullName); ?></td>
                                     <td><?php echo htmlspecialchars($user['username'] ?? ''); ?></td>
                                     <td><?php echo htmlspecialchars($user['employee_id'] ?? ''); ?></td>
-                                    <td><?php echo htmlspecialchars(($user['location'] ?? '') ?: 'N/A'); ?></td>
                                     <td><?php echo htmlspecialchars(($user['gender'] ?? '') ?: 'N/A'); ?></td>
-                                    <td><?php echo htmlspecialchars($user['role'] ?? ''); ?></td>
-                                    <td><?php echo htmlspecialchars(($user['phone'] ?? '') ?: 'N/A'); ?></td>
-                                    <td><?php echo htmlspecialchars(($user['email'] ?? '') ?: 'N/A'); ?></td>
+                                    <td class="user-role-cell">
+                                        <div class="user-role-count"><?php echo $roleCount; ?> <?php echo $roleCount === 1 ? 'Role' : 'Roles'; ?></div>
+                                        <div class="user-role-badges">
+                                            <?php if ($roleBadges !== []): ?>
+                                                <?php foreach ($roleBadges as $roleBadge): ?>
+                                                    <span class="user-role-badge"><?php echo htmlspecialchars($roleBadge); ?></span>
+                                                <?php endforeach; ?>
+                                            <?php else: ?>
+                                                <span class="text-muted">N/A</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
+                                    <td class="user-contact-cell"><?php echo htmlspecialchars(($user['phone'] ?? '') ?: 'N/A'); ?></td>
                                     <td>
                                         <span class="badge bg-<?php echo !empty($user['is_active']) ? 'success' : 'danger'; ?>">
                                             <?php echo !empty($user['is_active']) ? 'Active' : 'Inactive'; ?>
                                         </span>
                                     </td>
-                                    <td>
+                                    <td class="user-actions-cell">
+                                        <div class="user-actions-group">
                                         <button class="btn btn-sm btn-outline-info" onclick="viewUser(<?php echo (int) $user['id']; ?>)">View</button>
                                         <button class="btn btn-sm btn-outline-primary" onclick="editUser(<?php echo (int) $user['id']; ?>)">Edit</button>
                                         <button class="btn btn-sm btn-outline-warning" onclick="resetPassword(<?php echo (int) $user['id']; ?>)">Reset Password</button>
                                         <?php if ((int) $user['id'] !== (int) ($_SESSION['user_id'] ?? 0)): ?>
                                         <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(<?php echo (int) $user['id']; ?>)">Delete</button>
                                         <?php endif; ?>
+                                        </div>
                                     </td>
                                 </tr>
                                 <?php endwhile; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="10" class="text-center text-muted">No users found.</td>
+                                    <td colspan="8" class="text-center text-muted">No users found.</td>
                                 </tr>
                             <?php endif; ?>
                         </tbody>
@@ -637,7 +732,7 @@ function viewUser(id) {
     document.getElementById('view_close_relative_1').textContent = formatCloseRelative(row, 1);
     document.getElementById('view_close_relative_2').textContent = formatCloseRelative(row, 2);
     document.getElementById('view_status').textContent = row.dataset.is_active === '1' ? 'Active' : 'Inactive';
-    document.getElementById('view_role').textContent = row.dataset.role || 'N/A';
+    document.getElementById('view_role').textContent = formatRoleList(row.dataset.role);
     document.getElementById('view_preferred_channel').textContent = row.dataset.preferred_payout_channel === 'bank' ? 'Bank Transfer' : 'Mobile Money';
     document.getElementById('view_bank_name').textContent = row.dataset.bank_name || 'N/A';
     document.getElementById('view_bank_account_number').textContent = row.dataset.bank_account_number || 'N/A';
@@ -654,6 +749,15 @@ function formatCloseRelative(row, position) {
     const email = row.dataset['close_relative_' + position + '_email'] || '';
     const parts = [relationship, name, phone, location, email].filter(Boolean);
     return parts.length > 0 ? parts.join(' | ') : 'N/A';
+}
+
+function formatRoleList(roleValue) {
+    if (!roleValue) {
+        return 'N/A';
+    }
+
+    const roles = roleValue.split(',').map(role => role.trim()).filter(Boolean);
+    return roles.length > 0 ? roles.join(' | ') + ' (' + roles.length + ' ' + (roles.length === 1 ? 'role' : 'roles') + ')' : 'N/A';
 }
 
 function editUser(id) {
