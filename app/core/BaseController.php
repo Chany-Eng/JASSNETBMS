@@ -31,6 +31,14 @@ abstract class BaseController
         $this->db = Database::getInstance();
         $this->requireLogin();
         $this->user = $this->getCurrentUser();
+        if ($this->user) {
+            $_SESSION['username'] = (string) ($this->user['username'] ?? ($_SESSION['username'] ?? ''));
+            $_SESSION['full_name'] = trim((string) ($this->user['full_name'] ?? '')) !== ''
+                ? (string) $this->user['full_name']
+                : (string) ($this->user['username'] ?? ($_SESSION['full_name'] ?? 'User'));
+            $_SESSION['role'] = trim((string) ($this->user['role'] ?? ''));
+            $_SESSION['profile_photo'] = (string) ($this->user['profile_photo'] ?? ($_SESSION['profile_photo'] ?? ''));
+        }
     }
 
     /**

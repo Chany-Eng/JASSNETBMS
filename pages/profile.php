@@ -59,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if ($stmt->execute()) {
                 appLogActivity($conn, 'UPDATE_PROFILE', 'Updated own profile information', 'users', (int) $user['id']);
                 $message = 'Profile updated successfully';
+                appSyncCurrentSessionUserMeta($conn);
                 $user = getCurrentUser(); // Refresh user data
             } else {
                 $error = 'Error updating profile';
@@ -96,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     </div>
                 <?php endif; ?>
                 <h5><?php echo htmlspecialchars($user['full_name']); ?></h5>
-                <p class="text-muted"><?php echo htmlspecialchars($user['role']); ?></p>
+                <p class="text-muted"><?php echo htmlspecialchars(appFormatRoleList((string) ($user['role'] ?? ''))); ?></p>
                 <p class="text-muted">Employee ID: <?php echo htmlspecialchars($user['employee_id']); ?></p>
             </div>
         </div>
@@ -156,9 +157,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                 <div class="form-text">Employee ID cannot be changed</div>
                             </div>
                             <div class="mb-3">
-                                <label for="role" class="form-label">Role</label>
-                                <input type="text" class="form-control" id="role" value="<?php echo htmlspecialchars($user['role']); ?>" readonly>
-                                <div class="form-text">Role cannot be changed</div>
+                                <label for="role" class="form-label">Roles</label>
+                                <input type="text" class="form-control" id="role" value="<?php echo htmlspecialchars(appFormatRoleList((string) ($user['role'] ?? ''))); ?>" readonly>
+                                <div class="form-text">Roles assigned by admin cannot be changed here</div>
                             </div>
                         </div>
                     </div>

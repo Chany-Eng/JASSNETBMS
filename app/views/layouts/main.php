@@ -465,7 +465,7 @@
                         <?php
                         $displayName = trim((string) ($user['full_name'] ?? '')) !== '' ? (string) $user['full_name'] : (string) ($user['username'] ?? 'User');
                         $displayUsername = trim((string) ($user['username'] ?? ''));
-                        $displayRole = (string) ($user['role'] ?? 'Unknown Role');
+                        $displayRole = appFormatRoleList((string) ($user['role'] ?? ''));
                         $displayMeta = $displayRole;
                         if ($displayUsername !== '' && strcasecmp($displayName, $displayUsername) !== 0) {
                             $displayMeta = '@' . $displayUsername . ' • ' . $displayRole;
@@ -478,14 +478,13 @@
                         $notificationCount = count($unreadNotifications);
                         $notificationHeading = 'Requests Requiring Action';
                         $notificationSubheading = 'Open queue items and continue the next workflow steps.';
-                        $roleKey = strtolower($displayRole);
-                        if (str_contains($roleKey, 'manager')) {
+                        if (in_array('Manager', appParseRoleList((string) ($user['role'] ?? '')), true)) {
                             $notificationHeading = 'Manager Approval Queue';
                             $notificationSubheading = 'Review approvals waiting for manager action.';
-                        } elseif (str_contains($roleKey, 'accountant')) {
+                        } elseif (in_array('Accountant', appParseRoleList((string) ($user['role'] ?? '')), true)) {
                             $notificationHeading = 'Accountant Processing Queue';
                             $notificationSubheading = 'Process payouts, receipts, and final approvals.';
-                        } elseif (str_contains($roleKey, 'director')) {
+                        } elseif (in_array('Director', appParseRoleList((string) ($user['role'] ?? '')), true)) {
                             $notificationHeading = 'Director Decision Queue';
                             $notificationSubheading = 'Review high-level approvals and pending escalations.';
                         }
@@ -571,7 +570,7 @@
     <?php
     $showWelcomeToast = !empty($_SESSION['login_success']);
     $welcomeUserName = trim((string) ($_SESSION['login_success_name'] ?? ($user['full_name'] ?? ($user['username'] ?? 'User'))));
-    $welcomeRole = strtolower(trim((string) ($_SESSION['role'] ?? ($user['role'] ?? ''))));
+    $welcomeRole = appFormatRoleList((string) ($_SESSION['role'] ?? ($user['role'] ?? '')));
     $authTransition = $_SESSION['auth_transition'] ?? null;
     $showLoginTransition = is_array($authTransition) && (($authTransition['type'] ?? '') === 'login');
     $loginTransitionName = trim((string) ($authTransition['name'] ?? $welcomeUserName));
@@ -579,17 +578,17 @@
     $loginTransitionCopy = ($loginTransitionName !== '' ? $loginTransitionName : 'User') . ', workspace yako iko tayari.';
     $welcomeToastTitle = 'Karibu tena, ' . ($welcomeUserName !== '' ? $welcomeUserName : 'User');
     $welcomeToastCopy = 'Workspace yako iko tayari. Endelea na approvals, reports, au quick actions zako.';
-    if (str_contains($welcomeRole, 'manager')) {
+    if (appCurrentSessionHasRole(['Manager'])) {
         $welcomeToastCopy = 'Queue ya approvals inakusubiri. Fungua requests na uendelee na hatua zinazofuata.';
-    } elseif (str_contains($welcomeRole, 'accountant')) {
+    } elseif (appCurrentSessionHasRole(['Accountant'])) {
         $welcomeToastCopy = 'Processing queue iko tayari. Kagua payouts, receipts, na final approvals zako.';
-    } elseif (str_contains($welcomeRole, 'director')) {
+    } elseif (appCurrentSessionHasRole(['Director'])) {
         $welcomeToastCopy = 'Maamuzi ya mwisho yanakusubiri. Pitia approvals na operational priorities za leo.';
-    } elseif (str_contains($welcomeRole, 'store keeper')) {
+    } elseif (appCurrentSessionHasRole(['Store Keeper'])) {
         $welcomeToastCopy = 'Stock na issue requests ziko tayari. Angalia low stock na approvals za store.';
-    } elseif (str_contains($welcomeRole, 'technician')) {
+    } elseif (appCurrentSessionHasRole(['Technician'])) {
         $welcomeToastCopy = 'Station worklist yako iko tayari. Pitia progress updates na installation tasks.';
-    } elseif (str_contains($welcomeRole, 'sales')) {
+    } elseif (appCurrentSessionHasRole(['Sales'])) {
         $welcomeToastCopy = 'Lead na request follow-up zako ziko tayari. Endelea na entries na receipt updates.';
     }
     unset($_SESSION['login_success'], $_SESSION['login_success_name'], $_SESSION['auth_transition']);

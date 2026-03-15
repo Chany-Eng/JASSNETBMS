@@ -227,7 +227,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Please fill all required fields correctly';
         } else {
             if ($canRequestForOthers && $requested_by !== (int) $_SESSION['user_id']) {
-                $userCheckStmt = $conn->prepare("SELECT id FROM users WHERE id = ? AND is_active = 1 AND role IN ('Sales', 'Technician')");
+                $userCheckStmt = $conn->prepare("SELECT id FROM users WHERE id = ? AND is_active = 1 AND (FIND_IN_SET('Sales', REPLACE(COALESCE(role, ''), ', ', ',')) > 0 OR FIND_IN_SET('Technician', REPLACE(COALESCE(role, ''), ', ', ',')) > 0)");
                 if ($userCheckStmt) {
                     $userCheckStmt->bind_param('i', $requested_by);
                     $userCheckStmt->execute();
@@ -428,7 +428,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $items_result = $conn->query('SELECT * FROM inventory WHERE quantity > 0 AND COALESCE(is_deleted, 0) = 0 ORDER BY item_name');
 $users_result = null;
 if ($canRequestForOthers) {
-    $users_result = $conn->query("SELECT id, full_name, role FROM users WHERE is_active = 1 AND role IN ('Sales', 'Technician') ORDER BY full_name");
+    $users_result = $conn->query("SELECT id, full_name, role FROM users WHERE is_active = 1 AND (FIND_IN_SET('Sales', REPLACE(COALESCE(role, ''), ', ', ',')) > 0 OR FIND_IN_SET('Technician', REPLACE(COALESCE(role, ''), ', ', ',')) > 0) ORDER BY full_name");
 }
 $requestsWhere = '';
 if (!$isApprovalUser) {

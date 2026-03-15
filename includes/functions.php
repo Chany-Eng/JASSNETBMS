@@ -25,6 +25,41 @@ function getCurrentUser() {
     return $result->fetch_assoc();
 }
 
+function appSyncCurrentSessionUserMeta(mysqli $conn): void
+{
+    if (!isLoggedIn()) {
+        return;
+    }
+
+    $userId = (int) ($_SESSION['user_id'] ?? 0);
+    if ($userId <= 0) {
+        return;
+    }
+
+    $stmt = $conn->prepare('SELECT username, full_name, role, profile_photo FROM users WHERE id = ? LIMIT 1');
+    if (!$stmt) {
+        return;
+    }
+
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+    if (!$user) {
+        return;
+    }
+
+    $_SESSION['username'] = (string) ($user['username'] ?? ($_SESSION['username'] ?? ''));
+    $_SESSION['full_name'] = trim((string) ($user['full_name'] ?? '')) !== ''
+        ? (string) $user['full_name']
+        : (string) ($user['username'] ?? ($_SESSION['full_name'] ?? 'User'));
+    $_SESSION['role'] = trim((string) ($user['role'] ?? ''));
+    $_SESSION['profile_photo'] = (string) ($user['profile_photo'] ?? '');
+}
+
+if (isset($conn) && $conn instanceof mysqli && isLoggedIn()) {
+    appSyncCurrentSessionUserMeta($conn);
+}
+
 // Function to check password expiration
 function checkPasswordExpiration($user) {
     $last_changed = new DateTime($user['password_last_changed']);
@@ -69,6 +104,42 @@ function hasPermission($required_roles) {
         }
     }
     return false;
+}
+
+function appParseRoleList(string $roleValue): array
+{
+    $roles = array_values(array_filter(array_map('trim', explode(',', $roleValue)), static function ($role) {
+        return $role !== '';
+    }));
+
+    return $roles;
+}
+
+function appGetCurrentSessionRoles(): array
+{
+    return appParseRoleList((string) ($_SESSION['role'] ?? ''));
+}
+
+function appCurrentSessionHasRole(array $rolesToCheck): bool
+{
+    $currentRoles = array_map('strtolower', appGetCurrentSessionRoles());
+    foreach ($rolesToCheck as $roleToCheck) {
+        if (in_array(strtolower((string) $roleToCheck), $currentRoles, true)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function appFormatRoleList(string $roleValue, string $separator = ' | '): string
+{
+    $roles = appParseRoleList($roleValue);
+    if ($roles === []) {
+        return 'Unknown Role';
+    }
+
+    return implode($separator, $roles);
 }
 
 // SMS configuration and helper - using professional gateway wrapper

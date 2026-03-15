@@ -529,7 +529,7 @@
                     <?php
                     $displayName = trim((string) ($_SESSION['full_name'] ?? '')) !== '' ? (string) $_SESSION['full_name'] : (string) ($_SESSION['username'] ?? 'User');
                     $displayUsername = trim((string) ($_SESSION['username'] ?? ''));
-                    $displayRole = $_SESSION['role'] ?? 'Unknown Role';
+                    $displayRole = appFormatRoleList((string) ($_SESSION['role'] ?? ''));
                     $displayMeta = $displayRole;
                     if ($displayUsername !== '' && strcasecmp($displayName, $displayUsername) !== 0) {
                         $displayMeta = '@' . $displayUsername . ' • ' . $displayRole;
@@ -546,14 +546,13 @@
                     $notificationCount = count($unreadNotifications);
                     $notificationHeading = 'Requests Requiring Action';
                     $notificationSubheading = 'Open queue items and continue the next workflow steps.';
-                    $roleKey = strtolower((string) $displayRole);
-                    if (str_contains($roleKey, 'manager')) {
+                    if (appCurrentSessionHasRole(['Manager'])) {
                         $notificationHeading = 'Manager Approval Queue';
                         $notificationSubheading = 'Review approvals waiting for manager action.';
-                    } elseif (str_contains($roleKey, 'accountant')) {
+                    } elseif (appCurrentSessionHasRole(['Accountant'])) {
                         $notificationHeading = 'Accountant Processing Queue';
                         $notificationSubheading = 'Process payouts, receipts, and final approvals.';
-                    } elseif (str_contains($roleKey, 'director')) {
+                    } elseif (appCurrentSessionHasRole(['Director'])) {
                         $notificationHeading = 'Director Decision Queue';
                         $notificationSubheading = 'Review high-level approvals and pending escalations.';
                     }
