@@ -274,19 +274,19 @@
                 </a>
             </li>
             <li class="dropdown">
-                <a href="#" class="dropdown-toggle <?php echo in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#announcementsSubmenu" aria-controls="announcementsSubmenu" aria-expanded="<?php echo in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php']) ? 'true' : 'false'; ?>">
+                <a href="#" class="dropdown-toggle <?php echo in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php', 'website_content.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#announcementsSubmenu" aria-controls="announcementsSubmenu" aria-expanded="<?php echo in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php', 'website_content.php']) ? 'true' : 'false'; ?>">
                     <i class="fas fa-bullhorn"></i>
                     <span>Announcements</span>
                     <i class="fas fa-chevron-down float-end"></i>
                 </a>
-                <ul class="collapse list-unstyled ps-3 <?php echo in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php']) ? 'show' : ''; ?>" id="announcementsSubmenu">
+                <ul class="collapse list-unstyled ps-3 <?php echo in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php', 'website_content.php']) ? 'show' : ''; ?>" id="announcementsSubmenu">
                     <li>
                         <a href="<?php echo $base_path; ?>pages/announcements_latest.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'announcements_latest.php' ? 'active' : ''; ?>">
                             <i class="fas fa-list"></i>
                             <span>Latest Announcements</span>
                         </a>
                     </li>
-                    <?php if (hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin'])): ?>
+                    <?php if (hasPermission(['Store Keeper', 'Manager', 'Director', 'Content Manager', 'Super Admin'])): ?>
                     <li>
                         <a href="<?php echo $base_path; ?>pages/announcements_send.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'announcements_send.php' ? 'active' : ''; ?>">
                             <i class="fas fa-paper-plane"></i>
@@ -294,7 +294,15 @@
                         </a>
                     </li>
                     <?php endif; ?>
-                    <?php if (hasPermission(['Super Admin'])): ?>
+                    <?php if (appCanManageSiteContent()): ?>
+                    <li>
+                        <a href="<?php echo $base_path; ?>pages/website_content.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'website_content.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-palette"></i>
+                            <span>Website Content</span>
+                        </a>
+                    </li>
+                    <?php endif; ?>
+                    <?php if (appCanManageSiteContent()): ?>
                     <li>
                         <a href="<?php echo $base_path; ?>pages/announcements_inactive.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'announcements_inactive.php' ? 'active' : ''; ?>">
                             <i class="fas fa-archive"></i>

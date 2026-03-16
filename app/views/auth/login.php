@@ -46,23 +46,21 @@ if ($displayType === 'error') {
     $loginFeedbackIcon = 'fa-circle-check';
 }
 
-$workspaceSlides = [
-    [
-        'image' => APP_URL . '/assets/image/11.png',
-        'title' => 'Operations Visibility',
-        'copy' => 'Monitor field activity, approvals, and reporting from one professional workspace.',
-    ],
-    [
-        'image' => APP_URL . '/assets/image/12.jpg',
-        'title' => 'Financial Control',
-        'copy' => 'Follow payroll, receipts, and income workflows with clear business context.',
-    ],
-    [
-        'image' => APP_URL . '/assets/image/4.png',
-        'title' => 'Station Coordination',
-        'copy' => 'Track station rollout, inventory movement, and operational readiness visually.',
-    ],
-];
+$workspaceSlides = is_array($workspaceSlides ?? null) ? $workspaceSlides : [];
+$loginTheme = is_array($loginTheme ?? null) ? $loginTheme : [];
+
+$loginTheme = array_merge([
+    'primary_color' => '#17365C',
+    'secondary_color' => '#2969C7',
+    'accent_color' => '#21518B',
+    'brand_text_color' => '#FFFFFF',
+    'heading_color' => '#223047',
+    'body_text_color' => '#71829B',
+    'heading_font_css' => "'Outfit', 'Segoe UI', sans-serif",
+    'body_font_css' => "'Source Sans 3', 'Segoe UI', sans-serif",
+    'base_font_size' => 16,
+    'brand_title_size' => 54,
+], $loginTheme);
 
 $otpRequired = !empty($otp_required);
 $otpContext = is_array($otp_context ?? null) ? $otp_context : [];
@@ -77,10 +75,26 @@ $hideAuthToast = !empty($displayMessage)
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($pageTitle) ?> - <?= htmlspecialchars(APP_NAME) ?></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Merriweather:wght@400;700&family=Nunito:wght@400;600;700;800&family=Outfit:wght@400;600;700;800&family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="<?= APP_URL ?>/assets/css/style.css" rel="stylesheet">
     <style>
+        :root {
+            --login-primary: <?= htmlspecialchars((string) $loginTheme['primary_color'], ENT_QUOTES, 'UTF-8') ?>;
+            --login-secondary: <?= htmlspecialchars((string) $loginTheme['secondary_color'], ENT_QUOTES, 'UTF-8') ?>;
+            --login-accent: <?= htmlspecialchars((string) $loginTheme['accent_color'], ENT_QUOTES, 'UTF-8') ?>;
+            --login-brand-text: <?= htmlspecialchars((string) $loginTheme['brand_text_color'], ENT_QUOTES, 'UTF-8') ?>;
+            --login-heading-color: <?= htmlspecialchars((string) $loginTheme['heading_color'], ENT_QUOTES, 'UTF-8') ?>;
+            --login-body-color: <?= htmlspecialchars((string) $loginTheme['body_text_color'], ENT_QUOTES, 'UTF-8') ?>;
+            --login-heading-font: <?= htmlspecialchars((string) $loginTheme['heading_font_css'], ENT_QUOTES, 'UTF-8') ?>;
+            --login-body-font: <?= htmlspecialchars((string) $loginTheme['body_font_css'], ENT_QUOTES, 'UTF-8') ?>;
+            --login-base-font-size: <?= (int) $loginTheme['base_font_size'] ?>px;
+            --login-brand-title-max: <?= (int) $loginTheme['brand_title_size'] ?>px;
+        }
+
         body.login-shell {
             min-height: 100vh;
             background:
@@ -90,6 +104,8 @@ $hideAuthToast = !empty($displayMessage)
             display: flex;
             align-items: center;
             padding: 20px 0;
+            font-family: var(--login-body-font);
+            font-size: var(--login-base-font-size);
         }
 
         .login-shell-card {
@@ -115,8 +131,8 @@ $hideAuthToast = !empty($displayMessage)
         .login-brand-panel {
             height: 100%;
             padding: 2.2rem;
-            background: linear-gradient(145deg, #17365c 0%, #21518b 48%, #2969c7 100%);
-            color: #fff;
+            background: linear-gradient(145deg, var(--login-primary) 0%, var(--login-accent) 48%, var(--login-secondary) 100%);
+            color: var(--login-brand-text);
             position: relative;
             overflow: hidden;
             display: flex;
@@ -151,16 +167,18 @@ $hideAuthToast = !empty($displayMessage)
         }
 
         .login-brand-title {
-            font-size: clamp(2rem, 3vw, 2.85rem);
+            font-size: clamp(2rem, 3vw, var(--login-brand-title-max));
             line-height: 1.05;
             font-weight: 800;
             margin-bottom: 1rem;
-            color: #fff;
+            color: var(--login-brand-text);
+            font-family: var(--login-heading-font);
         }
 
         .login-brand-copy {
             max-width: 35rem;
-            color: rgba(228, 238, 251, 0.92);
+            color: var(--login-brand-text);
+            opacity: 0.92;
             font-size: 1rem;
             line-height: 1.7;
             margin-bottom: 1.1rem;
@@ -280,7 +298,7 @@ $hideAuthToast = !empty($displayMessage)
             border-radius: 999px;
             background: linear-gradient(180deg, #eef5ff 0%, #f8fbff 100%);
             border: 1px solid #d9e7f6;
-            color: #17365c;
+            color: var(--login-primary);
             font-size: 0.78rem;
             font-weight: 800;
             letter-spacing: 0.14em;
@@ -289,17 +307,18 @@ $hideAuthToast = !empty($displayMessage)
         }
 
         .login-form-brandline i {
-            color: #2969c7;
+            color: var(--login-secondary);
         }
 
         .login-form-title {
-            color: #223047;
+            color: var(--login-heading-color);
             font-weight: 800;
             margin-bottom: 0.45rem;
+            font-family: var(--login-heading-font);
         }
 
         .login-form-copy {
-            color: #71829b;
+            color: var(--login-body-color);
             margin-bottom: 1.5rem;
         }
 
@@ -309,7 +328,7 @@ $hideAuthToast = !empty($displayMessage)
             border-radius: 16px;
             background: #f6faff;
             border: 1px solid #dbe5ef;
-            color: #52657d;
+            color: var(--login-body-color);
         }
 
         .login-form-footer {
@@ -336,6 +355,41 @@ $hideAuthToast = !empty($displayMessage)
         .login-feedback-toast .toast-body {
             color: #41546d;
             line-height: 1.55;
+        }
+
+        .login-shell .btn-primary {
+            background: var(--login-secondary);
+            border-color: var(--login-secondary);
+        }
+
+        .login-shell .btn-primary:hover,
+        .login-shell .btn-primary:focus {
+            background: var(--login-accent);
+            border-color: var(--login-accent);
+        }
+
+        .login-shell .text-primary {
+            color: var(--login-secondary) !important;
+        }
+
+        .login-shell .form-control:focus,
+        .login-shell .form-check-input:focus {
+            border-color: rgba(41, 105, 199, 0.35);
+            box-shadow: 0 0 0 0.2rem rgba(41, 105, 199, 0.12);
+        }
+
+        .login-hero-empty {
+            margin-top: 0.9rem;
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: linear-gradient(160deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.08) 100%);
+            min-height: 330px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 2rem;
+            color: var(--login-brand-text);
         }
 
         @media (max-width: 991.98px) {
@@ -420,6 +474,7 @@ $hideAuthToast = !empty($displayMessage)
                                 <img src="<?= APP_URL ?>/assets/images/logo.png" alt="ERMS Logo" class="login-logo mb-4">
                                 <h1 class="login-brand-title">JASSNET ERMS</h1>
                                 <p class="login-brand-copy">JASSNET ERMS is a modern enterprise resource management system that enables efficient tracking of income, expenses, inventory, and network station setup requests within the company.</p>
+                                <?php if ($workspaceSlides !== []): ?>
                                 <div id="loginWorkspaceSlider" class="carousel slide carousel-fade login-hero-slider" data-bs-ride="carousel" data-bs-interval="6000">
                                     <div class="carousel-indicators">
                                         <?php foreach ($workspaceSlides as $slideIndex => $slide): ?>
@@ -442,6 +497,14 @@ $hideAuthToast = !empty($displayMessage)
                                         <span class="carousel-control-next-icon" aria-hidden="true"></span>
                                     </button>
                                 </div>
+                                <?php else: ?>
+                                <div class="login-hero-empty">
+                                    <div>
+                                        <div class="fw-semibold mb-2" style="font-family: var(--login-heading-font);">Workspace slides are currently hidden</div>
+                                        <div class="small mb-0">Authorized content managers can upload new homepage slide images from the website content panel.</div>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
                             </div>
                         </div>
                         <div class="col-12 col-lg-5 login-split-column">
@@ -450,7 +513,7 @@ $hideAuthToast = !empty($displayMessage)
                                     <div class="login-form-header">
                                         <img src="<?= APP_URL ?>/assets/images/logo.png" alt="ERMS Logo" class="login-form-logo mb-3">
                                         <div class="login-form-brandline"><i class="fas fa-building-shield"></i><span>JASSNET ERMS</span></div>
-                                        <div class="text-uppercase fw-semibold small mb-2" style="letter-spacing: 0.14em; color: #1d4f98;"><?= $otpRequired ? 'OTP Verification' : 'Welcome Back' ?></div>
+                                        <div class="text-uppercase fw-semibold small mb-2" style="letter-spacing: 0.14em; color: var(--login-accent);"><?= $otpRequired ? 'OTP Verification' : 'Welcome Back' ?></div>
                                         <h3 class="login-form-title"><?= $otpRequired ? 'Confirm OTP code' : 'Sign in to continue' ?></h3>
                                         <p class="login-form-copy">
                                             <?php if ($otpRequired): ?>

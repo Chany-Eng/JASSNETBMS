@@ -49,11 +49,22 @@ class AuthController extends BaseController
             $messageType = 'error';
         }
 
+        $workspaceSlides = [];
+        $loginTheme = [];
+        $legacyConn = $GLOBALS['conn'] ?? null;
+        if ($legacyConn instanceof \mysqli && function_exists('ensureSiteContentSchema')) {
+            ensureSiteContentSchema($legacyConn);
+            $workspaceSlides = appGetLoginSlides($legacyConn);
+            $loginTheme = appGetLoginThemeSettings($legacyConn);
+        }
+
         $this->data = [
             'message' => $message,
             'messageType' => $messageType,
             'otp_required' => $this->hasPendingOtp(),
             'otp_context' => $this->getOtpViewData(),
+            'workspaceSlides' => $workspaceSlides,
+            'loginTheme' => $loginTheme,
         ];
 
         $this->render('auth/login', $this->data);

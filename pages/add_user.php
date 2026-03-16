@@ -314,6 +314,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                         <label class="role-option-label" for="role_store_keeper"><i class="fas fa-box-open"></i><span>Store Keeper</span></label>
                                     </div>
                                     <div class="role-option-card">
+                                        <input type="checkbox" id="role_content_manager" name="role[]" value="Content Manager" <?php echo in_array('Content Manager', $submittedRoles, true) ? 'checked' : ''; ?>>
+                                        <label class="role-option-label" for="role_content_manager"><i class="fas fa-palette"></i><span>Content Manager</span></label>
+                                    </div>
+                                    <div class="role-option-card">
                                         <input type="checkbox" id="role_manager" name="role[]" value="Manager" <?php echo in_array('Manager', $submittedRoles, true) ? 'checked' : ''; ?>>
                                         <label class="role-option-label" for="role_manager"><i class="fas fa-user-tie"></i><span>Manager</span></label>
                                     </div>

@@ -24,6 +24,7 @@ $userRoleOptions = [
     ['value' => 'Sales', 'icon' => 'fa-chart-line'],
     ['value' => 'Technician', 'icon' => 'fa-screwdriver-wrench'],
     ['value' => 'Store Keeper', 'icon' => 'fa-box-open'],
+    ['value' => 'Content Manager', 'icon' => 'fa-palette'],
     ['value' => 'Manager', 'icon' => 'fa-user-tie'],
     ['value' => 'Director', 'icon' => 'fa-briefcase'],
     ['value' => 'Accountant', 'icon' => 'fa-calculator'],

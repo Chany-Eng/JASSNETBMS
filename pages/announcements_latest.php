@@ -6,28 +6,8 @@ if (!isLoggedIn()) {
     exit();
 }
 
-function ensureAnnouncementsTable(mysqli $conn): void
-{
-    $conn->query(
-        "CREATE TABLE IF NOT EXISTS announcements (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            message TEXT NOT NULL,
-            created_by INT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            expires_at DATETIME NULL,
-            is_active TINYINT(1) DEFAULT 1,
-            FOREIGN KEY (created_by) REFERENCES users(id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-    );
-
-    $colRes = $conn->query("SHOW COLUMNS FROM announcements LIKE 'expires_at'");
-    if ($colRes && $colRes->num_rows === 0) {
-        $conn->query("ALTER TABLE announcements ADD COLUMN expires_at DATETIME NULL AFTER created_at");
-    }
-}
-
 ensureAnnouncementsTable($conn);
-$canManage = hasPermission(['Super Admin']);
+$canManage = appCanManageSiteContent();
 
 $conn->query("UPDATE announcements SET is_active = 0 WHERE is_active = 1 AND expires_at IS NOT NULL AND expires_at < NOW()");
 
@@ -39,7 +19,7 @@ if ($success_message) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['deactivate_announcement'])) {
     if (!$canManage) {
-        $error = 'Only Super Admin can deactivate announcements.';
+        $error = 'Only content managers or administrators can deactivate announcements.';
     } else {
         $announcementId = intval($_POST['announcement_id'] ?? 0);
         $stmt = $conn->prepare('UPDATE announcements SET is_active = 0 WHERE id = ?');

@@ -6,28 +6,8 @@ if (!isLoggedIn()) {
     exit();
 }
 
-function ensureAnnouncementsTable(mysqli $conn): void
-{
-    $conn->query(
-        "CREATE TABLE IF NOT EXISTS announcements (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            message TEXT NOT NULL,
-            created_by INT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            expires_at DATETIME NULL,
-            is_active TINYINT(1) DEFAULT 1,
-            FOREIGN KEY (created_by) REFERENCES users(id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-    );
-
-    $colRes = $conn->query("SHOW COLUMNS FROM announcements LIKE 'expires_at'");
-    if ($colRes && $colRes->num_rows === 0) {
-        $conn->query("ALTER TABLE announcements ADD COLUMN expires_at DATETIME NULL AFTER created_at");
-    }
-}
-
 ensureAnnouncementsTable($conn);
-$canPost = hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin']);
+$canPost = hasPermission(['Store Keeper', 'Manager', 'Director', 'Content Manager', 'Super Admin']);
 
 if (!$canPost) {
     header('Location: ../dashboard.php?error=unauthorized');

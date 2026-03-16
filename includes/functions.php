@@ -157,6 +157,11 @@ function appFormatRoleList(string $roleValue, string $separator = ' | '): string
     return implode($separator, $roles);
 }
 
+function appCanManageSiteContent(): bool
+{
+    return hasPermission(['Content Manager', 'Super Admin']);
+}
+
 // SMS configuration and helper - using professional gateway wrapper
 require_once __DIR__ . '/jassnet_sms.php';
 require_once __DIR__ . '/jassnet_whatsapp.php';
@@ -531,6 +536,310 @@ function ensureUserIdentitySchema(mysqli $conn): void
             $conn->query($alterSql);
         }
     }
+}
+
+function ensureAnnouncementsTable(mysqli $conn): void
+{
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS announcements (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            message TEXT NOT NULL,
+            created_by INT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME NULL,
+            is_active TINYINT(1) DEFAULT 1,
+            KEY idx_announcements_active (is_active, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    if (!dbColumnExists($conn, 'announcements', 'expires_at')) {
+        $conn->query("ALTER TABLE announcements ADD COLUMN expires_at DATETIME NULL AFTER created_at");
+    }
+
+    if (!dbColumnExists($conn, 'announcements', 'is_active')) {
+        $conn->query("ALTER TABLE announcements ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER expires_at");
+    }
+}
+
+function ensureSiteSettingsSchema(mysqli $conn): void
+{
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS site_settings (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            setting_key VARCHAR(120) NOT NULL,
+            setting_value TEXT NULL,
+            updated_by INT NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_site_settings_key (setting_key)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+}
+
+function appGetSiteSettings(mysqli $conn, array $defaults = []): array
+{
+    ensureSiteSettingsSchema($conn);
+
+    $settings = $defaults;
+    $result = $conn->query('SELECT setting_key, setting_value FROM site_settings');
+    if (!$result instanceof mysqli_result) {
+        return $settings;
+    }
+
+    while ($row = $result->fetch_assoc()) {
+        $key = (string) ($row['setting_key'] ?? '');
+        if ($key === '') {
+            continue;
+        }
+
+        if ($defaults === [] || array_key_exists($key, $defaults)) {
+            $settings[$key] = (string) ($row['setting_value'] ?? '');
+        }
+    }
+
+    return $settings;
+}
+
+function appUpsertSiteSetting(mysqli $conn, string $key, string $value, ?int $updatedBy = null): bool
+{
+    ensureSiteSettingsSchema($conn);
+
+    $stmt = $conn->prepare(
+        'INSERT INTO site_settings (setting_key, setting_value, updated_by, updated_at) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_by = VALUES(updated_by), updated_at = NOW()'
+    );
+    if (!$stmt) {
+        return false;
+    }
+
+    $stmt->bind_param('ssi', $key, $value, $updatedBy);
+    return $stmt->execute();
+}
+
+function appGetDefaultLoginSlides(): array
+{
+    return [
+        [
+            'title' => 'Operations Visibility',
+            'caption' => 'Monitor field activity, approvals, and reporting from one professional workspace.',
+            'image_path' => 'assets/image/11.png',
+            'sort_order' => 10,
+        ],
+        [
+            'title' => 'Financial Control',
+            'caption' => 'Follow payroll, receipts, and income workflows with clear business context.',
+            'image_path' => 'assets/image/12.jpg',
+            'sort_order' => 20,
+        ],
+        [
+            'title' => 'Station Coordination',
+            'caption' => 'Track station rollout, inventory movement, and operational readiness visually.',
+            'image_path' => 'assets/image/4.png',
+            'sort_order' => 30,
+        ],
+    ];
+}
+
+function ensureSiteSlidesSchema(mysqli $conn): void
+{
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS site_slides (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(150) NOT NULL,
+            caption VARCHAR(255) NULL,
+            image_path VARCHAR(255) NOT NULL,
+            sort_order INT NOT NULL DEFAULT 0,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_by INT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY idx_site_slides_order (is_active, sort_order, id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    ensureSiteSettingsSchema($conn);
+    $seedState = appGetSiteSettings($conn, ['login_default_slides_seeded' => '0']);
+    $countResult = $conn->query('SELECT COUNT(*) AS total FROM site_slides');
+    $slideCount = 0;
+    if ($countResult instanceof mysqli_result) {
+        $countRow = $countResult->fetch_assoc();
+        $slideCount = (int) ($countRow['total'] ?? 0);
+    }
+
+    if ($slideCount === 0 && (string) ($seedState['login_default_slides_seeded'] ?? '0') !== '1') {
+        $insert = $conn->prepare('INSERT INTO site_slides (title, caption, image_path, sort_order, is_active, created_by) VALUES (?, ?, ?, ?, 1, NULL)');
+        if ($insert) {
+            foreach (appGetDefaultLoginSlides() as $defaultSlide) {
+                $title = (string) ($defaultSlide['title'] ?? 'Workspace Slide');
+                $caption = (string) ($defaultSlide['caption'] ?? '');
+                $imagePath = (string) ($defaultSlide['image_path'] ?? '');
+                $sortOrder = (int) ($defaultSlide['sort_order'] ?? 0);
+                $insert->bind_param('sssi', $title, $caption, $imagePath, $sortOrder);
+                $insert->execute();
+            }
+        }
+
+        appUpsertSiteSetting($conn, 'login_default_slides_seeded', '1', null);
+    }
+}
+
+function ensureSiteContentSchema(mysqli $conn): void
+{
+    ensureAnnouncementsTable($conn);
+    ensureSiteSettingsSchema($conn);
+    ensureSiteSlidesSchema($conn);
+}
+
+function appBuildPublicAssetUrl(string $path): string
+{
+    $normalizedPath = str_replace('\\', '/', trim($path));
+    if ($normalizedPath === '') {
+        return '';
+    }
+
+    if (preg_match('#^https?://#i', $normalizedPath)) {
+        return $normalizedPath;
+    }
+
+    return rtrim((string) APP_URL, '/') . '/' . ltrim($normalizedPath, '/');
+}
+
+function appNormalizeHexColor(string $value, string $fallback): string
+{
+    $candidate = strtoupper(trim($value));
+    if (preg_match('/^#[0-9A-F]{6}$/', $candidate)) {
+        return $candidate;
+    }
+
+    return $fallback;
+}
+
+function appNormalizeIntegerRange($value, int $min, int $max, int $fallback): int
+{
+    if (!is_numeric($value)) {
+        return $fallback;
+    }
+
+    $normalized = (int) $value;
+    if ($normalized < $min || $normalized > $max) {
+        return $fallback;
+    }
+
+    return $normalized;
+}
+
+function appGetLoginFontChoices(): array
+{
+    return [
+        'outfit' => ['label' => 'Outfit', 'css' => "'Outfit', 'Segoe UI', sans-serif"],
+        'manrope' => ['label' => 'Manrope', 'css' => "'Manrope', 'Segoe UI', sans-serif"],
+        'source_sans' => ['label' => 'Source Sans 3', 'css' => "'Source Sans 3', 'Segoe UI', sans-serif"],
+        'nunito' => ['label' => 'Nunito', 'css' => "'Nunito', 'Segoe UI', sans-serif"],
+        'merriweather' => ['label' => 'Merriweather', 'css' => "'Merriweather', Georgia, serif"],
+    ];
+}
+
+function appGetLoginThemeDefaults(): array
+{
+    return [
+        'login_primary_color' => '#17365C',
+        'login_secondary_color' => '#2969C7',
+        'login_accent_color' => '#21518B',
+        'login_brand_text_color' => '#FFFFFF',
+        'login_heading_color' => '#223047',
+        'login_body_text_color' => '#71829B',
+        'login_heading_font' => 'outfit',
+        'login_body_font' => 'source_sans',
+        'login_base_font_size' => '16',
+        'login_brand_title_size' => '54',
+    ];
+}
+
+function appGetLoginThemeSettings(mysqli $conn): array
+{
+    $defaults = appGetLoginThemeDefaults();
+    $storedSettings = appGetSiteSettings($conn, $defaults);
+    $fontChoices = appGetLoginFontChoices();
+
+    $headingFontKey = (string) ($storedSettings['login_heading_font'] ?? $defaults['login_heading_font']);
+    if (!isset($fontChoices[$headingFontKey])) {
+        $headingFontKey = $defaults['login_heading_font'];
+    }
+
+    $bodyFontKey = (string) ($storedSettings['login_body_font'] ?? $defaults['login_body_font']);
+    if (!isset($fontChoices[$bodyFontKey])) {
+        $bodyFontKey = $defaults['login_body_font'];
+    }
+
+    return [
+        'primary_color' => appNormalizeHexColor((string) ($storedSettings['login_primary_color'] ?? ''), $defaults['login_primary_color']),
+        'secondary_color' => appNormalizeHexColor((string) ($storedSettings['login_secondary_color'] ?? ''), $defaults['login_secondary_color']),
+        'accent_color' => appNormalizeHexColor((string) ($storedSettings['login_accent_color'] ?? ''), $defaults['login_accent_color']),
+        'brand_text_color' => appNormalizeHexColor((string) ($storedSettings['login_brand_text_color'] ?? ''), $defaults['login_brand_text_color']),
+        'heading_color' => appNormalizeHexColor((string) ($storedSettings['login_heading_color'] ?? ''), $defaults['login_heading_color']),
+        'body_text_color' => appNormalizeHexColor((string) ($storedSettings['login_body_text_color'] ?? ''), $defaults['login_body_text_color']),
+        'heading_font_key' => $headingFontKey,
+        'heading_font_css' => (string) $fontChoices[$headingFontKey]['css'],
+        'body_font_key' => $bodyFontKey,
+        'body_font_css' => (string) $fontChoices[$bodyFontKey]['css'],
+        'base_font_size' => appNormalizeIntegerRange($storedSettings['login_base_font_size'] ?? null, 14, 20, (int) $defaults['login_base_font_size']),
+        'brand_title_size' => appNormalizeIntegerRange($storedSettings['login_brand_title_size'] ?? null, 40, 72, (int) $defaults['login_brand_title_size']),
+    ];
+}
+
+function appGetLoginSlides(mysqli $conn, bool $activeOnly = true): array
+{
+    ensureSiteSlidesSchema($conn);
+
+    $sql = 'SELECT id, title, caption, image_path, sort_order, is_active FROM site_slides';
+    if ($activeOnly) {
+        $sql .= ' WHERE is_active = 1';
+    }
+    $sql .= ' ORDER BY sort_order ASC, id ASC';
+
+    $result = $conn->query($sql);
+    if (!$result instanceof mysqli_result) {
+        return [];
+    }
+
+    $slides = [];
+    while ($row = $result->fetch_assoc()) {
+        $imagePath = trim((string) ($row['image_path'] ?? ''));
+        if ($imagePath === '') {
+            continue;
+        }
+
+        $slides[] = [
+            'id' => (int) ($row['id'] ?? 0),
+            'title' => (string) ($row['title'] ?? 'Workspace Slide'),
+            'copy' => (string) ($row['caption'] ?? ''),
+            'caption' => (string) ($row['caption'] ?? ''),
+            'image_path' => $imagePath,
+            'image' => appBuildPublicAssetUrl($imagePath),
+            'sort_order' => (int) ($row['sort_order'] ?? 0),
+            'is_active' => (int) ($row['is_active'] ?? 0) === 1,
+        ];
+    }
+
+    return $slides;
+}
+
+function appIsManagedSlideUpload(string $imagePath): bool
+{
+    $normalizedPath = ltrim(str_replace('\\', '/', trim($imagePath)), '/');
+    return str_starts_with($normalizedPath, 'uploads/login_slides/');
+}
+
+function appDeleteManagedSlideFile(string $imagePath): bool
+{
+    if (!appIsManagedSlideUpload($imagePath)) {
+        return false;
+    }
+
+    $fullPath = APP_ROOT . '/' . ltrim(str_replace('\\', '/', trim($imagePath)), '/');
+    if (!file_exists($fullPath)) {
+        return false;
+    }
+
+    return unlink($fullPath);
 }
 
 function ensureActivityLogSchema(mysqli $conn): void
