@@ -21,7 +21,7 @@ if (!defined('SENDER_ID')) {
 }
 
 if (!defined('SMS_API_URL')) {
-    define('SMS_API_URL', getenv('SMS_API_URL') ?: 'http://mshastra.com/sendsms_api.json.aspx');
+    define('SMS_API_URL', getenv('SMS_API_URL') ?: 'http://mshastra.com/sendsms_api_json.aspx');
 }
 
 if (!defined('SMS_API_USERNAME')) {

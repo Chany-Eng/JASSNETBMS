@@ -2,12 +2,15 @@
     RewriteEngine On
     RewriteBase /jassnet-incame/
 
+    RewriteCond %{REQUEST_METHOD} ^(?:GET|HEAD)$ [NC]
     RewriteCond %{THE_REQUEST} \s/+jassnet-incame/index\.php(?:[?\s]|$) [NC]
     RewriteRule ^index\.php$ /jassnet-incame/ [R=302,L,NE]
 
+    RewriteCond %{REQUEST_METHOD} ^(?:GET|HEAD)$ [NC]
     RewriteCond %{THE_REQUEST} \s/+jassnet-incame/([A-Za-z0-9_-]+)\.php(?:[?\s]|$) [NC]
     RewriteRule ^([A-Za-z0-9_-]+)\.php$ /jassnet-incame/$1 [R=302,L,NE]
 
+    RewriteCond %{REQUEST_METHOD} ^(?:GET|HEAD)$ [NC]
     RewriteCond %{THE_REQUEST} \s/+jassnet-incame/pages/([A-Za-z0-9_-]+)\.php(?:[?\s]|$) [NC]
     RewriteRule ^pages/([A-Za-z0-9_-]+)\.php$ /jassnet-incame/pages/$1 [R=302,L,NE]
 

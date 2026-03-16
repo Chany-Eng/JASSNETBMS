@@ -485,7 +485,7 @@ $hideAuthToast = !empty($displayMessage)
                                         <?php foreach ($workspaceSlides as $slideIndex => $slide): ?>
                                             <div class="carousel-item <?= $slideIndex === 0 ? 'active' : '' ?>">
                                                 <div class="login-hero-slide">
-                                                    <img src="<?= htmlspecialchars($slide['image']) ?>" alt="<?= htmlspecialchars($slide['title']) ?>">
+                                                    <img src="<?= htmlspecialchars((string) ($slide['image'] ?? '')) ?>" alt="<?= htmlspecialchars((string) ($slide['title'] ?? '')) ?>">
                                                 </div>
                                             </div>
                                         <?php endforeach; ?>
@@ -513,15 +513,19 @@ $hideAuthToast = !empty($displayMessage)
                                     <div class="login-form-header">
                                         <img src="<?= APP_URL ?>/assets/images/logo.png" alt="ERMS Logo" class="login-form-logo mb-3">
                                         <div class="login-form-brandline"><i class="fas fa-building-shield"></i><span>JASSNET ERMS</span></div>
-                                        <div class="text-uppercase fw-semibold small mb-2" style="letter-spacing: 0.14em; color: var(--login-accent);"><?= $otpRequired ? 'OTP Verification' : 'Welcome Back' ?></div>
+                                        <div class="text-uppercase fw-semibold small mb-2" style="letter-spacing: 0.14em; color: var(--login-accent);"><?= $otpRequired ? 'OTP Verification' : '' ?></div>
                                         <h3 class="login-form-title"><?= $otpRequired ? 'Confirm OTP code' : 'Sign in to continue' ?></h3>
                                         <p class="login-form-copy">
                                             <?php if ($otpRequired): ?>
                                                 OTP imetumwa kwa contact zako zilizohifadhiwa kama SMS, WhatsApp, au Email. Weka code ya tarakimu 6 ili kufungua workspace yako.
                                             <?php else: ?>
-                                                Use your ERMS username and password to access the professional admin dashboard.
                                             <?php endif; ?>
                                         </p>
+                                        <?php if (!empty($displayMessage)): ?>
+                                            <div class="alert <?= htmlspecialchars($alertClass) ?> py-2 px-3 small" role="alert">
+                                                <?= htmlspecialchars($displayMessage) ?>
+                                            </div>
+                                        <?php endif; ?>
                                     </div>
                                     <?php if ($otpRequired): ?>
                                         <form method="POST" action="<?= APP_URL ?>/index.php" autocomplete="one-time-code">
@@ -557,15 +561,19 @@ $hideAuthToast = !empty($displayMessage)
                                         <?php endif; ?>
                                     <?php else: ?>
                                         <form method="POST" action="<?= APP_URL ?>/index.php" autocomplete="on">
-                                            <input type="hidden" name="auth_action" value="login">
                                             <div class="mb-3">
                                                 <label for="username" class="form-label">Username</label>
-                                                <input type="text" id="username" name="username" class="form-control" required>
+                                                <input type="text" id="username" name="username" class="form-control" required autofocus>
                                             </div>
 
                                             <div class="mb-3">
                                                 <label for="password" class="form-label">Password</label>
-                                                <input type="password" id="password" name="password" class="form-control" required>
+                                                <div class="input-group">
+                                                    <input type="password" id="password" name="password" class="form-control" required>
+                                                    <button type="button" class="btn btn-outline-secondary" id="togglePassword" aria-label="Show password" aria-pressed="false">
+                                                        <i class="fas fa-eye" aria-hidden="true"></i>
+                                                    </button>
+                                                </div>
                                             </div>
 
                                             <div class="form-check mb-3">
@@ -597,9 +605,27 @@ $hideAuthToast = !empty($displayMessage)
     <script src="<?= APP_URL ?>/assets/js/main.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const loginForm = document.querySelector('form[action="<?= APP_URL ?>/index.php"]');
+            // Find the login form - try multiple methods
+            let loginForm = null;
+            
+            // Method 1: Find form with username input
+            const usernameInput = document.querySelector('input[name="username"]');
+            if (usernameInput) {
+                loginForm = usernameInput.closest('form');
+            }
+            
+            // Method 2: Find form with otp_code input (for OTP screen)
+            if (!loginForm) {
+                const otpInput = document.querySelector('input[name="otp_code"]');
+                if (otpInput) {
+                    loginForm = otpInput.closest('form');
+                }
+            }
+            
             const authLoadingOverlay = document.getElementById('authLoadingOverlay');
             const loginFeedbackToast = document.getElementById('loginFeedbackToast');
+            const passwordInput = document.getElementById('password');
+            const togglePasswordButton = document.getElementById('togglePassword');
             const showOverlay = function(options) {
                 if (!authLoadingOverlay) {
                     return;
@@ -632,12 +658,31 @@ $hideAuthToast = !empty($displayMessage)
                 }, 180);
             }
 
+            if (passwordInput && togglePasswordButton) {
+                togglePasswordButton.addEventListener('click', function() {
+                    const nextType = passwordInput.type === 'password' ? 'text' : 'password';
+                    const icon = togglePasswordButton.querySelector('i');
+                    const showing = nextType === 'text';
+
+                    passwordInput.type = nextType;
+                    togglePasswordButton.setAttribute('aria-label', showing ? 'Hide password' : 'Show password');
+                    togglePasswordButton.setAttribute('aria-pressed', showing ? 'true' : 'false');
+
+                    if (icon) {
+                        icon.classList.toggle('fa-eye', !showing);
+                        icon.classList.toggle('fa-eye-slash', showing);
+                    }
+                });
+            }
+
             if (loginForm) {
-                loginForm.addEventListener('submit', function() {
+                loginForm.addEventListener('submit', function(e) {
+                    // Show loading overlay when form is submitted
                     showOverlay({
                         title: <?= json_encode($otpRequired ? 'Verifying OTP' : 'Signing you in', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>,
                         message: <?= json_encode($otpRequired ? 'Please wait while ERMS verifies your OTP and opens your workspace.' : 'Please wait while ERMS verifies your account and prepares your workspace.', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>
                     });
+                    // Form will submit normally
                 });
             }
 

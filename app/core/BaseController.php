@@ -74,15 +74,16 @@ abstract class BaseController
             return false;
         }
 
-        $userRoles = array_map('trim', explode(',', $this->user['role']));
+        $userRoles = array_map('trim', explode(',', (string) ($this->user['role'] ?? '')));
+        $normalizedUserRoles = array_map('strtolower', $userRoles);
         
         // Super admin bypasses all checks
-        if (in_array('Super Admin', $userRoles)) {
+        if (in_array('super admin', $normalizedUserRoles, true) || in_array('superadmin', $normalizedUserRoles, true)) {
             return true;
         }
 
         foreach ($requiredRoles as $role) {
-            if (in_array($role, $userRoles)) {
+            if (in_array(strtolower((string) $role), $normalizedUserRoles, true)) {
                 return true;
             }
         }

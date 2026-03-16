@@ -21,7 +21,7 @@ class User extends BaseModel
         'full_name',
         'password',
         'role',
-        'status',
+        'is_active',
         'department',
         'phone',
         'address',
@@ -347,7 +347,7 @@ class User extends BaseModel
         }
 
         $recipientName = trim((string) ($user['full_name'] ?? ($user['username'] ?? 'User')));
-        $message = 'ERMS OTP for ' . $recipientName . ': code yako ya kuingia ni ' . $otpCode . '. Ita-expire baada ya dakika ' . (int) LOGIN_OTP_EXPIRY_MINUTES . '.';
+        $message = 'Dear ' . $recipientName . ', OTP yako ya kuingia ni ' . $otpCode . '. Ita-expire baada ya dakika ' . (int) LOGIN_OTP_EXPIRY_MINUTES . '.';
 
         $responses = $this->sendOtpChannels($phone, $email, $recipientName, $message, (string) $otpCode);
         $channelSummary = $this->buildSecurityChannelSummary($responses);
@@ -384,7 +384,11 @@ class User extends BaseModel
 
         // Set password changed date
         $data['password_last_changed'] = date(DATETIME_FORMAT);
-        $data['status'] = $data['status'] ?? 'active';
+        // Use is_active column (the status column does not exist in this schema)
+        if (!isset($data['is_active'])) {
+            $data['is_active'] = isset($data['status']) ? ($data['status'] === 'active' ? 1 : 0) : 1;
+        }
+        unset($data['status']);
 
         return parent::create($data);
     }
@@ -452,7 +456,7 @@ class User extends BaseModel
      */
     public function getActiveUsers()
     {
-        return $this->getAll(['*'], ['status' => 'active'], 'full_name ASC');
+        return $this->getAll(['*'], ['is_active' => 1], 'full_name ASC');
     }
 
     /**

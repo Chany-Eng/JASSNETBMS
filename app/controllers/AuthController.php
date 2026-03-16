@@ -49,6 +49,16 @@ class AuthController extends BaseController
             $messageType = 'error';
         }
 
+        if (isset($_GET['login']) && $_GET['login'] === 'failed') {
+            $message = 'Username or password is incorrect. Please try again.';
+            $messageType = 'error';
+        }
+
+        if (isset($_GET['login']) && $_GET['login'] === 'locked') {
+            $message = 'Too many failed attempts. Wait 4 minutes before trying again.';
+            $messageType = 'warning';
+        }
+
         $workspaceSlides = [];
         $loginTheme = [];
         $legacyConn = $GLOBALS['conn'] ?? null;
@@ -102,7 +112,7 @@ class AuthController extends BaseController
 
         if (empty($username) || empty($password)) {
             $this->error('Username and password are required');
-            $this->redirect(APP_URL . '/index.php');
+            $this->redirect(APP_URL . '/index.php?login=failed');
         }
 
         $lockState = $this->userModel->getLoginDelayState($username);
@@ -113,7 +123,7 @@ class AuthController extends BaseController
                 'Blocked login attempt for username ' . $username . ' because a temporary 4-minute lock is active.',
                 $this->userModel->findByUsername($username)
             );
-            $this->redirect(APP_URL . '/index.php');
+            $this->redirect(APP_URL . '/index.php?login=locked');
         }
 
         // Authenticate user
@@ -150,7 +160,7 @@ class AuthController extends BaseController
             }
 
             $this->error($errorMsg);
-            $this->redirect(APP_URL . '/index.php');
+            $this->redirect(APP_URL . '/index.php?login=' . ($attemptState['is_locked'] ? 'locked' : 'failed'));
         }
 
         $this->userModel->clearFailedLoginAttempts($username);
@@ -460,7 +470,14 @@ class AuthController extends BaseController
 
     private function allowOtpTestingFallback()
     {
-        return defined('APP_DEBUG') && APP_DEBUG;
+        // Allow OTP testing fallback in development mode OR if notification senders aren't configured
+        if (defined('APP_DEBUG') && APP_DEBUG) {
+            return true;
+        }
+        
+        // Also allow if we're not in production (development/staging environments)
+        $appEnv = defined('APP_ENV') ? (string) APP_ENV : 'development';
+        return $appEnv !== 'production';
     }
 
     /**

@@ -273,13 +273,27 @@
                     <span>Dashboard</span>
                 </a>
             </li>
+            <?php if (appCanManageSiteContent()): ?>
+            <li>
+                <a href="<?php echo $base_path; ?>pages/website_content.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'website_content.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-palette"></i>
+                    <span>Existing Slides</span>
+                </a>
+            </li>
+            <li>
+                <a href="<?php echo $base_path; ?>pages/appearance_settings.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'appearance_settings.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-swatchbook"></i>
+                    <span>Appearance Settings</span>
+                </a>
+            </li>
+            <?php endif; ?>
             <li class="dropdown">
-                <a href="#" class="dropdown-toggle <?php echo in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php', 'website_content.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#announcementsSubmenu" aria-controls="announcementsSubmenu" aria-expanded="<?php echo in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php', 'website_content.php']) ? 'true' : 'false'; ?>">
+                <a href="#" class="dropdown-toggle <?php echo in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#announcementsSubmenu" aria-controls="announcementsSubmenu" aria-expanded="<?php echo in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php']) ? 'true' : 'false'; ?>">
                     <i class="fas fa-bullhorn"></i>
                     <span>Announcements</span>
                     <i class="fas fa-chevron-down float-end"></i>
                 </a>
-                <ul class="collapse list-unstyled ps-3 <?php echo in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php', 'website_content.php']) ? 'show' : ''; ?>" id="announcementsSubmenu">
+                <ul class="collapse list-unstyled ps-3 <?php echo in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php']) ? 'show' : ''; ?>" id="announcementsSubmenu">
                     <li>
                         <a href="<?php echo $base_path; ?>pages/announcements_latest.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'announcements_latest.php' ? 'active' : ''; ?>">
                             <i class="fas fa-list"></i>
@@ -291,14 +305,6 @@
                         <a href="<?php echo $base_path; ?>pages/announcements_send.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'announcements_send.php' ? 'active' : ''; ?>">
                             <i class="fas fa-paper-plane"></i>
                             <span>Send Announcement</span>
-                        </a>
-                    </li>
-                    <?php endif; ?>
-                    <?php if (appCanManageSiteContent()): ?>
-                    <li>
-                        <a href="<?php echo $base_path; ?>pages/website_content.php" class="<?php echo basename($_SERVER['PHP_SELF']) == 'website_content.php' ? 'active' : ''; ?>">
-                            <i class="fas fa-palette"></i>
-                            <span>Website Content</span>
                         </a>
                     </li>
                     <?php endif; ?>

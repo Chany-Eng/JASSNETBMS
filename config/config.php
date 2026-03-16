@@ -65,7 +65,7 @@ define('ALLOWED_FILE_TYPES', ['jpg', 'jpeg', 'png', 'pdf']);
 
 // SMS Configuration
 define('SENDER_ID', 'JASSNET');
-define('SMS_API_URL', getenv('SMS_API_URL') ?: 'http://mshastra.com/sendsms_api.json.aspx');
+define('SMS_API_URL', getenv('SMS_API_URL') ?: 'http://mshastra.com/sendsms_api_json.aspx');
 define('SMS_API_USERNAME', getenv('SMS_API_USERNAME') ?: 'jassnet012');
 define('SMS_API_PASSWORD', getenv('SMS_API_PASSWORD') ?: 'p4_sm661');
 define('SMS_API_KEY', getenv('SMS_API_KEY') ?: '');

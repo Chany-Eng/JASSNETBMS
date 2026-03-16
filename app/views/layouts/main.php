@@ -208,6 +208,20 @@
                     <span>Dashboard</span>
                 </a>
             </li>
+            <?php if ($controller->hasPermission(['Content Manager', 'Super Admin'])): ?>
+            <li>
+                <a href="<?= APP_URL ?>/pages/website_content.php" class="<?= basename($_SERVER['PHP_SELF']) == 'website_content.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-palette"></i>
+                    <span>Existing Slides</span>
+                </a>
+            </li>
+            <li>
+                <a href="<?= APP_URL ?>/pages/appearance_settings.php" class="<?= basename($_SERVER['PHP_SELF']) == 'appearance_settings.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-swatchbook"></i>
+                    <span>Appearance Settings</span>
+                </a>
+            </li>
+            <?php endif; ?>
             <li class="dropdown">
                 <a href="#" class="dropdown-toggle <?= in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php']) ? 'active' : ''; ?>" data-bs-toggle="collapse" data-bs-target="#announcementsSubmenu" aria-controls="announcementsSubmenu" aria-expanded="<?= in_array(basename($_SERVER['PHP_SELF']), ['announcements.php', 'announcements_latest.php', 'announcements_send.php', 'announcements_inactive.php']) ? 'true' : 'false'; ?>">
                     <i class="fas fa-bullhorn"></i>
@@ -221,7 +235,7 @@
                             <span>Latest Announcements</span>
                         </a>
                     </li>
-                    <?php if ($controller->hasPermission(['Store Keeper', 'Manager', 'Director', 'Super Admin'])): ?>
+                    <?php if ($controller->hasPermission(['Store Keeper', 'Manager', 'Director', 'Content Manager', 'Super Admin'])): ?>
                     <li>
                         <a href="<?= APP_URL ?>/pages/announcements_send.php" class="<?= basename($_SERVER['PHP_SELF']) == 'announcements_send.php' ? 'active' : ''; ?>">
                             <i class="fas fa-paper-plane"></i>
@@ -229,7 +243,7 @@
                         </a>
                     </li>
                     <?php endif; ?>
-                    <?php if ($controller->hasPermission(['Super Admin'])): ?>
+                    <?php if ($controller->hasPermission(['Content Manager', 'Super Admin'])): ?>
                     <li>
                         <a href="<?= APP_URL ?>/pages/announcements_inactive.php" class="<?= basename($_SERVER['PHP_SELF']) == 'announcements_inactive.php' ? 'active' : ''; ?>">
                             <i class="fas fa-archive"></i>
