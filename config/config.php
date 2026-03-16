@@ -48,7 +48,7 @@ if (!defined('ASSETS_PATH')) {
 }
 
 // Session
-define('SESSION_TIMEOUT', 3600);
+define('SESSION_TIMEOUT', 240);
 define('SESSION_NAME', 'JASSNET_SESSION');
 
 // Password Policy

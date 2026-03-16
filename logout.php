@@ -9,6 +9,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 $logoutName = trim((string) ($_SESSION['full_name'] ?? ($_SESSION['username'] ?? 'User')));
+$logoutReason = trim((string) ($_GET['reason'] ?? 'logout'));
 
 $_SESSION = [];
 
@@ -41,7 +42,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 $_SESSION['auth_transition'] = [
-	'type' => 'logout',
+	'type' => $logoutReason === 'inactive' ? 'inactive-timeout' : 'logout',
 	'name' => $logoutName,
 ];
 

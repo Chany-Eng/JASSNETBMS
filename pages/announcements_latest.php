@@ -70,7 +70,6 @@ include '../includes/header.php';
 <div class="row mb-4">
     <div class="col-md-12 d-flex justify-content-between align-items-center">
         <h2><i class="fas fa-list"></i> Latest Announcements</h2>
-        <span class="text-muted">Visible to all users</span>
     </div>
 </div>
 

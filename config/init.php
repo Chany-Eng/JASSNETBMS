@@ -38,9 +38,7 @@ if (APP_DEBUG) {
 // Check if user session timeout
 if (isset($_SESSION['last_activity'])) {
     if ((time() - $_SESSION['last_activity']) > SESSION_TIMEOUT) {
-        session_unset();
-        session_destroy();
-        header("Location: " . APP_URL . "/index.php?session=expired");
+        header('Location: ' . APP_URL . '/logout.php?reason=inactive');
         exit();
     }
 }

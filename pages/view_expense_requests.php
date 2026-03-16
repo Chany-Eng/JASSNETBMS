@@ -28,6 +28,49 @@ function canEditExpenseRequest(array $row): bool
     return hasPermission(['Super Admin']) || ($isOwner && in_array((string) ($row['status'] ?? ''), $editableStatuses, true));
 }
 
+function canHandleExpenseWorkflowStage(string $stage): bool
+{
+    if ($stage === 'manager') {
+        return hasPermission(['Manager', 'Super Admin']);
+    }
+
+    if ($stage === 'director') {
+        return hasPermission(['Director', 'Super Admin']);
+    }
+
+    if ($stage === 'accountant') {
+        return hasPermission(['Accountant', 'Super Admin']);
+    }
+
+    return false;
+}
+
+function expenseWorkflowActorLabel(string $role): string
+{
+    return hasPermission(['Super Admin']) ? 'Super Admin acting as ' . $role : $role;
+}
+
+function expenseStageActingRole(string $status): string
+{
+    if ($status === 'Pending Manager Approval') {
+        return 'Manager';
+    }
+
+    if ($status === 'Pending Director Approval') {
+        return 'Director';
+    }
+
+    if ($status === 'Pending Accountant Processing') {
+        return 'Accountant';
+    }
+
+    if ($status === 'Waiting for Receipt') {
+        return 'Requester';
+    }
+
+    return '';
+}
+
 function expenseFetchWorkflowRequest(mysqli $conn, int $requestId): ?array
 {
     $stmt = $conn->prepare("SELECT er.*, u.id AS requester_id, u.full_name AS requested_by_name, u.phone AS requested_by_phone FROM expense_requests er JOIN users u ON er.requested_by = u.id WHERE er.id = ? LIMIT 1");
@@ -122,13 +165,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['approve_manager'])) {
         $request_id = intval($_POST['request_id']);
         $manager_comment = trim(sanitize($_POST['manager_comment'] ?? ''));
-        if ($manager_comment === '') {
+        if (!canHandleExpenseWorkflowStage('manager')) {
+            $error = 'You are not authorized to complete manager approval for this request.';
+        } elseif ($manager_comment === '') {
             $error = 'Manager comment is required before approval.';
         } else {
             $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Pending Director Approval', manager_approved = 1, manager_comment = ? WHERE id = ? AND status = 'Pending Manager Approval'");
             $stmt->bind_param("si", $manager_comment, $request_id);
             $stmt->execute();
-            appLogActivity($conn, 'APPROVE_EXPENSE_MANAGER', 'Manager approved expense request #' . $request_id, 'expense_requests', $request_id);
+            appLogActivity($conn, 'APPROVE_EXPENSE_MANAGER', expenseWorkflowActorLabel('Manager') . ' approved expense request #' . $request_id, 'expense_requests', $request_id);
             $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
             if ($requestRow) {
                 expenseNotifyWorkflowStage($conn, $requestRow, 'manager_approved', $manager_comment);
@@ -138,13 +183,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     } elseif (isset($_POST['reject_manager'])) {
         $request_id = intval($_POST['request_id']);
         $reason = trim(sanitize($_POST['manager_rejection_reason'] ?? ''));
-        if ($reason === '') {
+        if (!canHandleExpenseWorkflowStage('manager')) {
+            $error = 'You are not authorized to reject this request at manager stage.';
+        } elseif ($reason === '') {
             $error = 'Manager rejection comment is required.';
         } else {
             $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Rejected', rejection_comment = ?, manager_comment = ? WHERE id = ? AND status = 'Pending Manager Approval'");
             $stmt->bind_param("ssi", $reason, $reason, $request_id);
             $stmt->execute();
-            appLogActivity($conn, 'REJECT_EXPENSE_MANAGER', 'Manager rejected expense request #' . $request_id . ' with reason: ' . $reason, 'expense_requests', $request_id);
+            appLogActivity($conn, 'REJECT_EXPENSE_MANAGER', expenseWorkflowActorLabel('Manager') . ' rejected expense request #' . $request_id . ' with reason: ' . $reason, 'expense_requests', $request_id);
             $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
             if ($requestRow) {
                 expenseNotifyWorkflowStage($conn, $requestRow, 'rejected', 'Manager: ' . $reason);
@@ -154,13 +201,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     } elseif (isset($_POST['approve_director'])) {
         $request_id = intval($_POST['request_id']);
         $director_comment = trim(sanitize($_POST['director_comment'] ?? ''));
-        if ($director_comment === '') {
+        if (!canHandleExpenseWorkflowStage('director')) {
+            $error = 'You are not authorized to complete director approval for this request.';
+        } elseif ($director_comment === '') {
             $error = 'Director comment is required before approval.';
         } else {
             $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Pending Accountant Processing', director_approved = 1, director_comment = ? WHERE id = ? AND status = 'Pending Director Approval'");
             $stmt->bind_param("si", $director_comment, $request_id);
             $stmt->execute();
-            appLogActivity($conn, 'APPROVE_EXPENSE_DIRECTOR', 'Director approved expense request #' . $request_id, 'expense_requests', $request_id);
+            appLogActivity($conn, 'APPROVE_EXPENSE_DIRECTOR', expenseWorkflowActorLabel('Director') . ' approved expense request #' . $request_id, 'expense_requests', $request_id);
             $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
             if ($requestRow) {
                 expenseNotifyWorkflowStage($conn, $requestRow, 'director_approved', $director_comment);
@@ -170,13 +219,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     } elseif (isset($_POST['reject_director'])) {
         $request_id = intval($_POST['request_id']);
         $reason = trim(sanitize($_POST['director_rejection_reason'] ?? ''));
-        if ($reason === '') {
+        if (!canHandleExpenseWorkflowStage('director')) {
+            $error = 'You are not authorized to reject this request at director stage.';
+        } elseif ($reason === '') {
             $error = 'Director rejection comment is required.';
         } else {
             $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Rejected', rejection_comment = ?, director_comment = ? WHERE id = ? AND status = 'Pending Director Approval'");
             $stmt->bind_param("ssi", $reason, $reason, $request_id);
             $stmt->execute();
-            appLogActivity($conn, 'REJECT_EXPENSE_DIRECTOR', 'Director rejected expense request #' . $request_id . ' with reason: ' . $reason, 'expense_requests', $request_id);
+            appLogActivity($conn, 'REJECT_EXPENSE_DIRECTOR', expenseWorkflowActorLabel('Director') . ' rejected expense request #' . $request_id . ' with reason: ' . $reason, 'expense_requests', $request_id);
             $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
             if ($requestRow) {
                 expenseNotifyWorkflowStage($conn, $requestRow, 'rejected', 'Director: ' . $reason);
@@ -191,7 +242,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
         $summaryBefore = expenseGetPayoutSummary($conn, $request_id);
 
-        if (!$requestRow || (string) ($requestRow['status'] ?? '') !== 'Pending Accountant Processing') {
+        if (!canHandleExpenseWorkflowStage('accountant')) {
+            $error = 'You are not authorized to revise this request at accountant stage.';
+        } elseif (!$requestRow || (string) ($requestRow['status'] ?? '') !== 'Pending Accountant Processing') {
             $error = 'Expense request not found or is no longer waiting for accountant review';
         } elseif ($revision_comment === '') {
             $error = 'Accountant revision comment is required.';
@@ -206,7 +259,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt->execute();
             }
 
-            appLogActivity($conn, 'REVISE_EXPENSE_ACCOUNTANT', 'Accountant revised expense request #' . $request_id . ' to Tshs. ' . number_format($revised_amount, 2) . '. Reason: ' . $revision_comment, 'expense_requests', $request_id);
+            appLogActivity($conn, 'REVISE_EXPENSE_ACCOUNTANT', expenseWorkflowActorLabel('Accountant') . ' revised expense request #' . $request_id . ' to Tshs. ' . number_format($revised_amount, 2) . '. Reason: ' . $revision_comment, 'expense_requests', $request_id);
             if ($requestRow) {
                 $requestRow['amount_requested'] = $revised_amount;
                 expenseNotifyWorkflowStage($conn, $requestRow, 'revised', $revision_comment, $revised_amount);
@@ -228,7 +281,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $requestStmt->execute();
             $requestRow = $requestStmt->get_result()->fetch_assoc();
 
-            if (!$requestRow) {
+            if (!canHandleExpenseWorkflowStage('accountant')) {
+                $error = 'You are not authorized to process this request at accountant stage.';
+            } elseif (!$requestRow) {
                 $error = 'Expense request not found or already processed';
             } elseif ($accountant_comment === '') {
                 $error = 'Accountant comment is required before processing payment.';
@@ -313,7 +368,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     }
 
                     $conn->commit();
-                    appLogActivity($conn, 'PROCESS_EXPENSE_PAYMENT', $successText, 'expense_requests', $request_id);
+                    appLogActivity($conn, 'PROCESS_EXPENSE_PAYMENT', expenseWorkflowActorLabel('Accountant') . ' processed expense request #' . $request_id . '. ' . $successText, 'expense_requests', $request_id);
                     $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
                     if ($requestRow) {
                         expenseNotifyWorkflowStage($conn, $requestRow, 'paid', $accountant_comment, $amount_paid);
@@ -374,7 +429,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt = $conn->prepare("UPDATE expense_requests SET status = 'Completed', receipt_uploaded = 1 WHERE id = ?");
                 $stmt->bind_param("i", $request_id);
                 $stmt->execute();
-                appLogActivity($conn, 'UPLOAD_RECEIPT', 'Uploaded expense receipt for request #' . $request_id, 'receipts', $request_id);
+                $receiptActor = hasPermission(['Super Admin']) && (int) ($requestRow['requested_by'] ?? 0) !== (int) ($_SESSION['user_id'] ?? 0)
+                    ? 'Super Admin uploaded expense receipt on behalf of requester for request #' . $request_id
+                    : 'Uploaded expense receipt for request #' . $request_id;
+                appLogActivity($conn, 'UPLOAD_RECEIPT', $receiptActor, 'receipts', $request_id);
                 $requestRow = expenseFetchWorkflowRequest($conn, $request_id);
                 if ($requestRow) {
                     expenseNotifyWorkflowStage($conn, $requestRow, 'completed');
@@ -537,7 +595,6 @@ include '../includes/header.php';
         'eyebrow' => 'Expense Operations',
         'title' => 'Expense Requests',
         'icon' => 'fa-receipt',
-        'subtitle' => 'Track approvals, accountant processing, payment receipts, and workflow status in one list.',
         'badges' => ['Approval tracking', 'Receipt visibility', 'Payment workflow'],
         'actions' => $expenseHeroActions,
         'stats' => [
@@ -634,6 +691,10 @@ include '../includes/header.php';
                                             <?php endif; ?>
                                         </td>
                                         <td>
+                                            <?php $expenseActingRole = hasPermission(['Super Admin']) ? expenseStageActingRole((string) ($row['status'] ?? '')) : ''; ?>
+                                            <?php if ($expenseActingRole !== ''): ?>
+                                                <span class="acting-role-badge">Admin as <?php echo htmlspecialchars($expenseActingRole); ?></span>
+                                            <?php endif; ?>
                                             <button class="btn btn-sm btn-outline-primary" onclick="viewRequest(<?php echo $row['id']; ?>)">View</button>
                                             <?php if (!empty($row['latest_receipt_file'])): ?>
                                                 <a class="btn btn-sm btn-outline-info" href="../uploads/<?php echo htmlspecialchars((string) $row['latest_receipt_file']); ?>" target="_blank">Receipt</a>
@@ -644,13 +705,13 @@ include '../includes/header.php';
                                             <?php if (hasPermission(['Super Admin'])): ?>
                                                 <button class="btn btn-sm btn-outline-danger" onclick="deleteExpenseRequest(<?php echo $row['id']; ?>)">Delete</button>
                                             <?php endif; ?>
-                                            <?php if (hasPermission(['Manager']) && $row['status'] == 'Pending Manager Approval'): ?>
+                                            <?php if (canHandleExpenseWorkflowStage('manager') && $row['status'] == 'Pending Manager Approval'): ?>
                                                 <button class="btn btn-sm btn-success" onclick="approveManager(<?php echo $row['id']; ?>)">Approve</button>
                                                 <button class="btn btn-sm btn-danger" onclick="rejectManager(<?php echo $row['id']; ?>)">Reject</button>
-                                            <?php elseif (hasPermission(['Director']) && $row['status'] == 'Pending Director Approval'): ?>
+                                            <?php elseif (canHandleExpenseWorkflowStage('director') && $row['status'] == 'Pending Director Approval'): ?>
                                                 <button class="btn btn-sm btn-success" onclick="approveDirector(<?php echo $row['id']; ?>)">Approve</button>
                                                 <button class="btn btn-sm btn-danger" onclick="rejectDirector(<?php echo $row['id']; ?>)">Reject</button>
-                                            <?php elseif (hasPermission(['Accountant']) && $row['status'] == 'Pending Accountant Processing'): ?>
+                                            <?php elseif (canHandleExpenseWorkflowStage('accountant') && $row['status'] == 'Pending Accountant Processing'): ?>
                                                 <button
                                                     class="btn btn-sm btn-primary"
                                                     data-request-id="<?php echo (int) $row['id']; ?>"

@@ -287,6 +287,32 @@ textarea.form-control {
     color: white;
 }
 
+.acting-role-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 0.55rem;
+    padding: 0.24rem 0.62rem;
+    border-radius: 999px;
+    border: 1px solid rgba(2, 119, 189, 0.18);
+    background: linear-gradient(180deg, rgba(2, 119, 189, 0.08) 0%, rgba(0, 180, 216, 0.12) 100%);
+    color: #0b5f8a;
+    font-size: 0.73rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.acting-role-badge::before {
+    content: '';
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0277bd 0%, #00b4d8 100%);
+    box-shadow: 0 0 0 3px rgba(2, 119, 189, 0.12);
+}
+
 /* Page Titles */
 h1, h2, h3, h4, h5, h6 {
     color: var(--text-primary);

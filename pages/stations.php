@@ -22,6 +22,57 @@ function canEditStationRequest(array $row): bool
     return hasPermission(['Super Admin']) || ($isOwner && in_array((string) ($row['status'] ?? ''), $editableStatuses, true));
 }
 
+function canHandleStationWorkflowStage(string $stage): bool
+{
+    if ($stage === 'manager') {
+        return hasPermission(['Manager', 'Super Admin']);
+    }
+
+    if ($stage === 'director') {
+        return hasPermission(['Director', 'Super Admin']);
+    }
+
+    if ($stage === 'accountant') {
+        return hasPermission(['Accountant', 'Super Admin']);
+    }
+
+    if ($stage === 'storekeeper') {
+        return hasPermission(['Store Keeper', 'Super Admin']);
+    }
+
+    return false;
+}
+
+function stationWorkflowActorLabel(string $role): string
+{
+    return hasPermission(['Super Admin']) ? 'Super Admin acting as ' . $role : $role;
+}
+
+function stationStageActingRole(string $status): string
+{
+    if ($status === 'Pending Manager Approval') {
+        return 'Manager';
+    }
+
+    if ($status === 'Pending Director Approval') {
+        return 'Director';
+    }
+
+    if ($status === 'Awaiting Accountant Approval') {
+        return 'Accountant';
+    }
+
+    if ($status === 'Pending Store Keeper Approval') {
+        return 'Store Keeper';
+    }
+
+    if (in_array($status, ['Approved', 'Installation in Progress'], true)) {
+        return 'Requester';
+    }
+
+    return '';
+}
+
 function stationTableExists(mysqli $conn, string $tableName): bool
 {
     $safeTable = $conn->real_escape_string($tableName);
@@ -163,7 +214,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
     } elseif (isset($_POST['approve_manager'])) {
-        if (!hasPermission(['Manager'])) {
+        if (!canHandleStationWorkflowStage('manager')) {
             $error = 'You are not authorized to do manager approval';
         } else {
             $request_id = intval($_POST['request_id']);
@@ -174,7 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt = $conn->prepare("UPDATE station_requests SET status = 'Pending Director Approval', manager_approved_by = ?, manager_approved_at = NOW(), manager_comment = ? WHERE id = ? AND status = 'Pending Manager Approval'");
                 $stmt->bind_param("isi", $_SESSION['user_id'], $manager_comment, $request_id);
                 $stmt->execute();
-                appLogActivity($conn, 'APPROVE_STATION_MANAGER', 'Manager approved station request #' . $request_id, 'station_requests', $request_id);
+                appLogActivity($conn, 'APPROVE_STATION_MANAGER', stationWorkflowActorLabel('Manager') . ' approved station request #' . $request_id, 'station_requests', $request_id);
                 $requestRow = stationFetchWorkflowRequest($conn, $request_id);
                 if ($requestRow) {
                     stationNotifyWorkflowStage($conn, $requestRow, 'manager_approved', $manager_comment);
@@ -183,7 +234,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
     } elseif (isset($_POST['reject_manager'])) {
-        if (!hasPermission(['Manager'])) {
+        if (!canHandleStationWorkflowStage('manager')) {
             $error = 'You are not authorized to reject station requests';
         } else {
             $request_id = intval($_POST['request_id']);
@@ -194,7 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt = $conn->prepare("UPDATE station_requests SET status = 'Rejected', manager_approved_by = ?, manager_approved_at = NOW(), manager_comment = ? WHERE id = ? AND status = 'Pending Manager Approval'");
                 $stmt->bind_param("isi", $_SESSION['user_id'], $reason, $request_id);
                 $stmt->execute();
-                appLogActivity($conn, 'REJECT_STATION_MANAGER', 'Manager rejected station request #' . $request_id . ' with reason: ' . $reason, 'station_requests', $request_id);
+                appLogActivity($conn, 'REJECT_STATION_MANAGER', stationWorkflowActorLabel('Manager') . ' rejected station request #' . $request_id . ' with reason: ' . $reason, 'station_requests', $request_id);
                 $requestRow = stationFetchWorkflowRequest($conn, $request_id);
                 if ($requestRow) {
                     stationNotifyWorkflowStage($conn, $requestRow, 'rejected', 'Manager: ' . $reason);
@@ -203,7 +254,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
     } elseif (isset($_POST['approve_director'])) {
-        if (!hasPermission(['Director', 'Super Admin'])) {
+        if (!canHandleStationWorkflowStage('director')) {
             $error = 'You are not authorized to do director approval';
         } else {
             $request_id = intval($_POST['request_id']);
@@ -214,7 +265,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt = $conn->prepare("UPDATE station_requests SET status = 'Approved', approved_by = ?, director_approved_by = ?, director_approved_at = NOW(), director_comment = ? WHERE id = ? AND status = 'Pending Director Approval'");
                 $stmt->bind_param("iisi", $_SESSION['user_id'], $_SESSION['user_id'], $director_comment, $request_id);
                 $stmt->execute();
-                appLogActivity($conn, 'APPROVE_STATION_DIRECTOR', 'Director approved station request #' . $request_id, 'station_requests', $request_id);
+                appLogActivity($conn, 'APPROVE_STATION_DIRECTOR', stationWorkflowActorLabel('Director') . ' approved station request #' . $request_id, 'station_requests', $request_id);
                 $requestRow = stationFetchWorkflowRequest($conn, $request_id);
                 if ($requestRow) {
                     stationNotifyWorkflowStage($conn, $requestRow, 'director_approved', $director_comment);
@@ -223,7 +274,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
     } elseif (isset($_POST['reject_director'])) {
-        if (!hasPermission(['Director', 'Super Admin'])) {
+        if (!canHandleStationWorkflowStage('director')) {
             $error = 'You are not authorized to reject station requests';
         } else {
             $request_id = intval($_POST['request_id']);
@@ -234,7 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $stmt = $conn->prepare("UPDATE station_requests SET status = 'Rejected', director_approved_by = ?, director_approved_at = NOW(), director_comment = ? WHERE id = ? AND status = 'Pending Director Approval'");
                 $stmt->bind_param("isi", $_SESSION['user_id'], $reason, $request_id);
                 $stmt->execute();
-                appLogActivity($conn, 'REJECT_STATION_DIRECTOR', 'Director rejected station request #' . $request_id . ' with reason: ' . $reason, 'station_requests', $request_id);
+                appLogActivity($conn, 'REJECT_STATION_DIRECTOR', stationWorkflowActorLabel('Director') . ' rejected station request #' . $request_id . ' with reason: ' . $reason, 'station_requests', $request_id);
                 $requestRow = stationFetchWorkflowRequest($conn, $request_id);
                 if ($requestRow) {
                     stationNotifyWorkflowStage($conn, $requestRow, 'rejected', 'Director: ' . $reason);
@@ -252,7 +303,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $check_result = $check_stmt->get_result();
         $request_data = $check_result->fetch_assoc();
         
-        if (!$request_data || $request_data['requested_by'] != $_SESSION['user_id']) {
+        if (!$request_data || ((int) $request_data['requested_by'] !== (int) ($_SESSION['user_id'] ?? 0) && !hasPermission(['Super Admin']))) {
             $error = 'You can only submit costs for your approved station requests';
         } else {
             $actual_equipment_cost = floatval($_POST['actual_equipment_cost']);
@@ -280,7 +331,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 if ($stmt->execute()) {
                     // Update station status to Awaiting Accountant Approval
                     $conn->query("UPDATE station_requests SET status = 'Awaiting Accountant Approval' WHERE id = $request_id");
-                    appLogActivity($conn, 'SUBMIT_STATION_COSTS', 'Submitted actual costs for station request #' . $request_id, 'station_requests', $request_id);
+                    $submitCostLog = hasPermission(['Super Admin']) && (int) ($request_data['requested_by'] ?? 0) !== (int) ($_SESSION['user_id'] ?? 0)
+                        ? 'Super Admin submitted actual costs on behalf of requester for station request #' . $request_id
+                        : 'Submitted actual costs for station request #' . $request_id;
+                    appLogActivity($conn, 'SUBMIT_STATION_COSTS', $submitCostLog, 'station_requests', $request_id);
                     $message = 'Receipt and costs submitted successfully. Awaiting Accountant approval.';
                 } else {
                     $error = 'Error submitting costs';
@@ -288,7 +342,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
     } elseif (isset($_POST['approve_costs_accountant'])) {
-        if (!hasPermission(['Accountant'])) {
+        if (!canHandleStationWorkflowStage('accountant')) {
             $error = 'You are not authorized to approve station costs';
         } else {
             $request_id = intval($_POST['request_id']);
@@ -403,7 +457,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     }
 
                     $conn->commit();
-                    appLogActivity($conn, 'APPROVE_STATION_ACCOUNTANT', 'Accountant processed station request #' . $request_id . ' with status ' . $finalStatus, 'station_requests', $request_id);
+                    appLogActivity($conn, 'APPROVE_STATION_ACCOUNTANT', stationWorkflowActorLabel('Accountant') . ' processed station request #' . $request_id . ' with status ' . $finalStatus, 'station_requests', $request_id);
 
                     if ($shouldNotifyReady && !empty($requester_data['phone'])) {
                         $smsMsg = "Jamii salama! Your station '" . $requester_data['station_name'] . "' costs have been approved by Accountant. " . ($finalStatus === 'Pending Store Keeper Approval' ? 'Waiting for Store Keeper to issue store items.' : 'Installation can now begin.');
@@ -437,7 +491,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
     } elseif (isset($_POST['reject_costs_accountant'])) {
-        if (!hasPermission(['Accountant'])) {
+        if (!canHandleStationWorkflowStage('accountant')) {
             $error = 'You are not authorized to reject station costs';
         } else {
             $request_id = intval($_POST['request_id']);
@@ -473,11 +527,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 stationNotifyWorkflowStage($conn, $requestRow, 'rejected', 'Accountant: ' . $rejection_reason);
             }
             
-            appLogActivity($conn, 'REJECT_STATION_ACCOUNTANT', 'Accountant rejected submitted station costs for request #' . $request_id, 'station_requests', $request_id);
+            appLogActivity($conn, 'REJECT_STATION_ACCOUNTANT', stationWorkflowActorLabel('Accountant') . ' rejected submitted station costs for request #' . $request_id . ' with reason: ' . $rejection_reason, 'station_requests', $request_id);
             $message = 'Receipt and costs rejected. Requester has been notified to resubmit. SMS notification sent to requester.';
         }
     } elseif (isset($_POST['approve_storekeeper'])) {
-        if (!hasPermission(['Store Keeper'])) {
+        if (!canHandleStationWorkflowStage('storekeeper')) {
             $error = 'You are not authorized to do Store Keeper approval';
         } else {
             $request_id = intval($_POST['request_id']);
@@ -504,7 +558,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
 
                 $conn->commit();
-                appLogActivity($conn, 'APPROVE_STATION_STOREKEEPER', 'Store Keeper issued equipment for station request #' . $request_id, 'station_requests', $request_id);
+                appLogActivity($conn, 'APPROVE_STATION_STOREKEEPER', stationWorkflowActorLabel('Store Keeper') . ' issued equipment for station request #' . $request_id, 'station_requests', $request_id);
                 $message = 'Store Keeper approved and issued station equipment successfully.';
             } catch (Throwable $e) {
                 $conn->rollback();
@@ -512,7 +566,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
         }
     } elseif (isset($_POST['reject_storekeeper'])) {
-        if (!hasPermission(['Store Keeper'])) {
+        if (!canHandleStationWorkflowStage('storekeeper')) {
             $error = 'You are not authorized to reject as Store Keeper';
         } else {
             $request_id = intval($_POST['request_id']);
@@ -520,6 +574,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if ($stmt) {
                 $stmt->bind_param('i', $request_id);
                 $stmt->execute();
+                appLogActivity($conn, 'REJECT_STATION_STOREKEEPER', stationWorkflowActorLabel('Store Keeper') . ' skipped store issue for station request #' . $request_id, 'station_requests', $request_id);
                 $message = 'Store Keeper skipped store issue. Station remains ready for installation without issued inventory.';
             } else {
                 $error = 'Could not prepare Store Keeper reject query';
@@ -529,23 +584,31 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $request_id = intval($_POST['request_id']);
         $status = sanitize($_POST['progress_status']);
         $notes = sanitize($_POST['progress_notes']);
+        if (!hasPermission(['Technician', 'Manager', 'Director', 'Super Admin', 'Store Keeper'])) {
+            $error = 'You are not allowed to update station progress';
+        }
         
         // Only allow progress updates after approvals are completed
-        $check_stmt = $conn->prepare("SELECT status FROM station_requests WHERE id = ?");
-        $check_stmt->bind_param("i", $request_id);
-        $check_stmt->execute();
-        $check_result = $check_stmt->get_result();
-        $current_status = $check_result->fetch_assoc()['status'];
+        $current_status = '';
+        if (!$error) {
+            $check_stmt = $conn->prepare("SELECT status FROM station_requests WHERE id = ?");
+            $check_stmt->bind_param("i", $request_id);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            $current_status = $check_result->fetch_assoc()['status'];
+        }
         
-        if (!stationCanUpdateProgress((string) $current_status)) {
+        if (!$error && !stationCanUpdateProgress((string) $current_status)) {
             $error = 'Progress can only be updated after approvals and payouts are completed';
-        } else {
+        } elseif (!$error) {
             $stmt = $conn->prepare("INSERT INTO station_progress (station_request_id, status, notes) VALUES (?, ?, ?)");
             $stmt->bind_param("iss", $request_id, $status, $notes);
             
             if ($stmt->execute()) {
                 // Update station status
                 $conn->query("UPDATE station_requests SET status = '$status' WHERE id = $request_id");
+                $progressActor = hasPermission(['Super Admin']) ? 'Super Admin updated station progress for request #' . $request_id : 'Updated station progress for request #' . $request_id;
+                appLogActivity($conn, 'UPDATE_STATION_PROGRESS', $progressActor . ' to status ' . $status, 'station_requests', $request_id);
                 $message = 'Progress updated successfully';
             } else {
                 $error = 'Error updating progress';
@@ -561,7 +624,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $check_result = $check_stmt->get_result();
         $request_data = $check_result->fetch_assoc();
         
-        if ($request_data['requested_by'] != $_SESSION['user_id']) {
+        if ((int) ($request_data['requested_by'] ?? 0) !== (int) ($_SESSION['user_id'] ?? 0) && !hasPermission(['Super Admin'])) {
             $error = 'You can only complete stations you requested';
         } else {
             $completion_date = sanitize($_POST['completion_date']);
@@ -590,6 +653,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 if ($stmt->execute()) {
                     // Update station status to completed
                     $conn->query("UPDATE station_requests SET status = 'Completed' WHERE id = $request_id");
+                    $completeActor = hasPermission(['Super Admin']) && (int) ($request_data['requested_by'] ?? 0) !== (int) ($_SESSION['user_id'] ?? 0)
+                        ? 'Super Admin submitted station completion on behalf of requester for request #' . $request_id
+                        : 'Submitted station completion for request #' . $request_id;
+                    appLogActivity($conn, 'COMPLETE_STATION', $completeActor, 'station_requests', $request_id);
                     $message = 'Station completion data submitted successfully';
                 } else {
                     $error = 'Error submitting completion data';
@@ -716,7 +783,6 @@ echo renderPageHero([
     'eyebrow' => 'Station Operations',
     'title' => 'Station Setup Management',
     'icon' => 'fa-broadcast-tower',
-    'subtitle' => 'Manage field station requests, approvals, cost submission, store workflow, and final installation progress from one control view.',
     'badges' => ['Deployment workflow', 'Cost approval', 'Installation tracking'],
     'actions' => $stationHeroActions,
 ]);
@@ -784,6 +850,10 @@ echo renderPageHero([
                                     <?php endif; ?>
                                 </td>
                                 <td>
+                                    <?php $stationActingRole = hasPermission(['Super Admin']) ? stationStageActingRole((string) ($request['status'] ?? '')) : ''; ?>
+                                    <?php if ($stationActingRole !== ''): ?>
+                                        <span class="acting-role-badge">Admin as <?php echo htmlspecialchars($stationActingRole); ?></span>
+                                    <?php endif; ?>
                                     <button class="btn btn-sm btn-outline-primary" onclick="viewStation(<?php echo $request['id']; ?>)">View</button>
                                     <?php if (canEditStationRequest($request)): ?>
                                         <button class="btn btn-sm btn-outline-secondary" onclick="editStationRequest(<?php echo $request['id']; ?>)">Edit</button>
@@ -791,23 +861,23 @@ echo renderPageHero([
                                     <?php if (hasPermission(['Super Admin'])): ?>
                                         <button class="btn btn-sm btn-outline-danger" onclick="deleteStationRequest(<?php echo $request['id']; ?>)">Delete</button>
                                     <?php endif; ?>
-                                    <?php if (hasPermission(['Manager']) && $request['status'] == 'Pending Manager Approval'): ?>
+                                    <?php if (canHandleStationWorkflowStage('manager') && $request['status'] == 'Pending Manager Approval'): ?>
                                         <button class="btn btn-sm btn-success" onclick="approveManager(<?php echo $request['id']; ?>)">Approve</button>
                                         <button class="btn btn-sm btn-danger" onclick="rejectManager(<?php echo $request['id']; ?>)">Reject</button>
-                                    <?php elseif (hasPermission(['Director', 'Super Admin']) && $request['status'] == 'Pending Director Approval'): ?>
+                                    <?php elseif (canHandleStationWorkflowStage('director') && $request['status'] == 'Pending Director Approval'): ?>
                                         <button class="btn btn-sm btn-success" onclick="approveDirector(<?php echo $request['id']; ?>)">Approve</button>
                                         <button class="btn btn-sm btn-danger" onclick="rejectDirector(<?php echo $request['id']; ?>)">Reject</button>
-                                    <?php elseif ($request['requested_by'] == $_SESSION['user_id'] && $request['status'] == 'Approved'): ?>
+                                    <?php elseif (($request['requested_by'] == $_SESSION['user_id'] || hasPermission(['Super Admin'])) && $request['status'] == 'Approved'): ?>
                                         <button class="btn btn-sm btn-warning" onclick="submitCosts(<?php echo $request['id']; ?>)">Submit Costs</button>
-                                    <?php elseif (hasPermission(['Accountant']) && $request['status'] == 'Awaiting Accountant Approval'): ?>
+                                    <?php elseif (canHandleStationWorkflowStage('accountant') && $request['status'] == 'Awaiting Accountant Approval'): ?>
                                         <button class="btn btn-sm btn-success" onclick="approveCostsAccountant(<?php echo $request['id']; ?>)">Approve</button>
                                         <button class="btn btn-sm btn-danger" onclick="rejectCostsAccountant(<?php echo $request['id']; ?>)">Reject</button>
-                                    <?php elseif (hasPermission(['Store Keeper']) && $request['status'] == 'Pending Store Keeper Approval'): ?>
+                                    <?php elseif (canHandleStationWorkflowStage('storekeeper') && $request['status'] == 'Pending Store Keeper Approval'): ?>
                                         <button class="btn btn-sm btn-success" onclick="approveStoreKeeper(<?php echo $request['id']; ?>)">Approve Store</button>
                                         <button class="btn btn-sm btn-outline-danger" onclick="rejectStoreKeeper(<?php echo $request['id']; ?>)">Skip Store</button>
-                                    <?php elseif ($request['requested_by'] == $_SESSION['user_id'] && $request['status'] == 'Installation in Progress'): ?>
+                                    <?php elseif (($request['requested_by'] == $_SESSION['user_id'] || hasPermission(['Super Admin'])) && $request['status'] == 'Installation in Progress'): ?>
                                         <button class="btn btn-sm btn-success" onclick="completeStation(<?php echo $request['id']; ?>)">Complete Station</button>
-                                    <?php elseif (hasPermission(['Accountant']) && in_array($request['status'], ['Pending Store Keeper Approval', 'Ready for Installation', 'Equipment Issued', 'Installation in Progress', 'Completed'], true)): ?>
+                                    <?php elseif (hasPermission(['Accountant', 'Super Admin']) && in_array($request['status'], ['Pending Store Keeper Approval', 'Ready for Installation', 'Equipment Issued', 'Installation in Progress', 'Completed'], true)): ?>
                                         <button class="btn btn-sm btn-info" onclick="viewReceipt(<?php echo $request['id']; ?>)">View Receipt</button>
                                     <?php elseif (hasPermission(['Technician', 'Manager', 'Director', 'Super Admin', 'Store Keeper']) && stationCanUpdateProgress((string) $request['status'])): ?>
                                         <button class="btn btn-sm btn-info" onclick="updateProgress(<?php echo $request['id']; ?>)">Update Progress</button>

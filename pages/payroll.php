@@ -89,6 +89,28 @@ function payrollUserCanAccess(array $row, bool $isPrivileged): bool
     return (int) ($row['user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0);
 }
 
+function payrollWorkflowActorLabel(string $role): string
+{
+    return hasPermission(['Super Admin']) ? 'Super Admin acting as ' . $role : $role;
+}
+
+function payrollStageActingRole(string $status): string
+{
+    if ($status === 'Pending Manager Approval') {
+        return 'Manager';
+    }
+
+    if ($status === 'Pending Director Approval') {
+        return 'Director';
+    }
+
+    if ($status === 'Pending Accountant Final Approval') {
+        return 'Accountant';
+    }
+
+    return '';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['approve_manager_salary'])) {
         if (!$canManagerApprovePayroll) {
@@ -103,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($stmt) {
                     $stmt->bind_param('sii', $comment, $_SESSION['user_id'], $requestId);
                     $stmt->execute();
-                    appLogActivity($conn, 'APPROVE_SALARY_MANAGER', 'Manager approved salary request #' . $requestId, 'salary_requests', $requestId);
+                    appLogActivity($conn, 'APPROVE_SALARY_MANAGER', payrollWorkflowActorLabel('Manager') . ' approved salary request #' . $requestId, 'salary_requests', $requestId);
                     $salaryRow = payrollFetchWorkflowRequest($conn, $requestId);
                     if ($salaryRow) {
                         payrollNotifyStage($conn, $salaryRow, 'manager_approved', $comment);
@@ -127,7 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($stmt) {
                     $stmt->bind_param('sii', $comment, $_SESSION['user_id'], $requestId);
                     $stmt->execute();
-                    appLogActivity($conn, 'APPROVE_SALARY_DIRECTOR', 'Director approved salary request #' . $requestId, 'salary_requests', $requestId);
+                    appLogActivity($conn, 'APPROVE_SALARY_DIRECTOR', payrollWorkflowActorLabel('Director') . ' approved salary request #' . $requestId, 'salary_requests', $requestId);
                     $salaryRow = payrollFetchWorkflowRequest($conn, $requestId);
                     if ($salaryRow) {
                         payrollNotifyStage($conn, $salaryRow, 'director_approved', $comment);
@@ -179,7 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ($stmt) {
                             $stmt->bind_param('ssii', $comment, $paymentReference, $_SESSION['user_id'], $requestId);
                             $stmt->execute();
-                            appLogActivity($conn, 'FINALIZE_SALARY_PAYMENT', 'Finalized salary payment #' . $requestId . ' via ' . payrollPayoutLabel($selectedPayoutChannel) . ' reference ' . $paymentReference, 'salary_requests', $requestId);
+                            appLogActivity($conn, 'FINALIZE_SALARY_PAYMENT', payrollWorkflowActorLabel('Accountant') . ' finalized salary payment #' . $requestId . ' via ' . payrollPayoutLabel($selectedPayoutChannel) . ' reference ' . $paymentReference, 'salary_requests', $requestId);
                             $salaryRow = payrollFetchWorkflowRequest($conn, $requestId);
                             if ($salaryRow) {
                                 $salaryRow['net_salary'] = $salaryRow['net_salary'] ?? ($salaryRow['net_salary'] ?? 0);
@@ -201,6 +223,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $requestId = intval($_POST['request_id'] ?? 0);
             $comment = sanitize($_POST['rejection_comment'] ?? '');
+            $salaryRowBeforeReject = payrollFetchWorkflowRequest($conn, $requestId);
+            $rejectRole = payrollStageActingRole((string) ($salaryRowBeforeReject['status'] ?? ''));
             if ($comment === '') {
                 $error = 'Rejection comment is required';
             } else {
@@ -208,7 +232,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($stmt) {
                     $stmt->bind_param('sii', $comment, $_SESSION['user_id'], $requestId);
                     $stmt->execute();
-                    appLogActivity($conn, 'REJECT_SALARY_REQUEST', 'Rejected salary request #' . $requestId, 'salary_requests', $requestId);
+                    $rejectActor = $rejectRole !== '' ? payrollWorkflowActorLabel($rejectRole) : (hasPermission(['Super Admin']) ? 'Super Admin' : 'Reviewer');
+                    appLogActivity($conn, 'REJECT_SALARY_REQUEST', $rejectActor . ' rejected salary request #' . $requestId . ' with reason: ' . $comment, 'salary_requests', $requestId);
                     $salaryRow = payrollFetchWorkflowRequest($conn, $requestId);
                     if ($salaryRow) {
                         payrollNotifyStage($conn, $salaryRow, 'rejected', $comment);
@@ -307,14 +332,13 @@ include '../includes/header.php';
         $payrollHeroActions[] = '<a href="create_salary_request.php" class="btn btn-light"><i class="fas fa-plus-circle"></i> Create Salary Request</a>';
     }
     if ($canExportPayroll) {
-        $payrollHeroActions[] = '<a href="payroll.php?export=excel" class="btn btn-outline-light"><i class="fas fa-file-excel"></i> Export Excel</a>';
-        $payrollHeroActions[] = '<a href="payroll.php?export=batch-pdf" class="btn btn-outline-light"><i class="fas fa-file-pdf"></i> Export PDF</a>';
+        $payrollHeroActions[] = '<a href="payroll.php?export=excel" class="btn btn-outline-light" data-no-loader><i class="fas fa-file-excel"></i> Export Excel</a>';
+        $payrollHeroActions[] = '<a href="payroll.php?export=batch-pdf" class="btn btn-outline-light" data-no-loader><i class="fas fa-file-pdf"></i> Export PDF</a>';
     }
     echo renderPageHero([
         'eyebrow' => 'Payroll Control',
         'title' => 'Salary Requests',
         'icon' => 'fa-money-check-dollar',
-        'subtitle' => 'Track salary approvals, final accountant confirmation, cash or digital payouts, and payslip downloads.',
         'badges' => ['Multi-stage approvals', 'Excel export', 'Payslip PDF'],
         'actions' => $payrollHeroActions,
         'stats' => [
@@ -377,8 +401,12 @@ include '../includes/header.php';
                                                 <?php if (!empty($row['rejection_comment'])): ?><div class="text-danger"><strong>Reject:</strong> <?php echo htmlspecialchars($row['rejection_comment']); ?></div><?php endif; ?>
                                             </td>
                                             <td>
+                                                <?php $payrollActingRole = hasPermission(['Super Admin']) ? payrollStageActingRole((string) ($row['status'] ?? '')) : ''; ?>
+                                                <?php if ($payrollActingRole !== ''): ?>
+                                                    <span class="acting-role-badge">Admin as <?php echo htmlspecialchars($payrollActingRole); ?></span>
+                                                <?php endif; ?>
                                                 <?php if ((string) ($row['status'] ?? '') === 'Paid'): ?>
-                                                    <a href="payroll.php?export=pdf&id=<?php echo (int) $row['id']; ?>" class="btn btn-sm btn-outline-danger">PDF</a>
+                                                    <a href="payroll.php?export=pdf&id=<?php echo (int) $row['id']; ?>" class="btn btn-sm btn-outline-danger" data-no-loader>PDF</a>
                                                 <?php endif; ?>
                                                 <?php if ($canManagerApprovePayroll && (string) ($row['status'] ?? '') === 'Pending Manager Approval'): ?>
                                                     <button type="button" class="btn btn-sm btn-success" onclick="openPayrollModal('manager', <?php echo (int) $row['id']; ?>)">Manager Approve</button>

@@ -78,7 +78,6 @@ include '../includes/header.php';
             <div class="expense-hero d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
                     <h2 class="mb-1"><i class="fas fa-file-signature"></i> Submit Expense Request</h2>
-                    <div class="small">Capture clear details so approvals move faster.</div>
                 </div>
                 <a href="view_expense_requests.php" class="btn btn-light">
                     <i class="fas fa-arrow-left"></i> Back to Requests

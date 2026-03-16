@@ -265,7 +265,6 @@
                 <img src="<?php echo $base_path; ?>assets/images/logo.png" alt="JASSNET Logo">
             </div>
             <h4>JASSNET ERMS</h4>
-            <p>Professional business operations workspace</p>
         </div>
         <ul class="menu">
             <li>
@@ -525,9 +524,8 @@
                         <i class="fas fa-bars"></i>
                     </button>
                     <div class="app-shell-heading">
-                        <div class="eyebrow">JASSNET Admin Panel</div>
+                        <div class="eyebrow">JASSNET Portal</div>
                         <h1 class="title"><?php echo htmlspecialchars($current_page_label); ?></h1>
-                        <div class="subtitle">Modern workspace for reports, approvals, finance, inventory, and operations.</div>
                     </div>
                 </div>
 
@@ -571,6 +569,7 @@
                     }
                     ?>
                     <span class="app-topbar-chip"><i class="fas fa-calendar-day"></i> <?php echo date('d M Y'); ?></span>
+                    <span class="app-topbar-chip"><i class="fas fa-clock"></i> <?php echo date('h:i:s A'); ?></span>
                     <span class="app-topbar-chip"><i class="fas fa-user-shield"></i> <?php echo $displayRoleCount; ?> <?php echo $displayRoleCount === 1 ? 'Role' : 'Roles'; ?></span>
                     <div class="dropdown me-3">
                         <button class="btn app-icon-button position-relative" type="button" id="notificationDropdown" data-bs-toggle="dropdown" aria-expanded="false">

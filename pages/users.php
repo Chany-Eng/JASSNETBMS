@@ -147,22 +147,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($user_id === intval($_SESSION['user_id'] ?? 0)) {
             $error = 'You cannot delete your own account while logged in';
         } else {
-            $stmt = $conn->prepare('DELETE FROM users WHERE id = ?');
-            if ($stmt) {
-                $stmt->bind_param('i', $user_id);
-                if ($stmt->execute()) {
-                    if ($stmt->affected_rows > 0) {
-                        appLogActivity($conn, 'DELETE_USER', 'Deleted user account #' . $user_id, 'users', $user_id);
-                        $_SESSION['success_message'] = 'User deleted successfully';
-                        header('Location: users.php');
-                        exit();
-                    }
-                    $error = 'User not found or already deleted';
-                } else {
-                    $error = 'Unable to delete user. This user may be linked to existing records.';
-                }
+            $userLookupStmt = $conn->prepare('SELECT full_name, is_active FROM users WHERE id = ? LIMIT 1');
+            if ($userLookupStmt) {
+                $userLookupStmt->bind_param('i', $user_id);
+                $userLookupStmt->execute();
+                $userRecord = $userLookupStmt->get_result()->fetch_assoc();
             } else {
-                $error = 'Could not prepare delete query';
+                $userRecord = null;
+            }
+
+            if (!$userRecord) {
+                $error = 'User not found or already deleted';
+            } else {
+                $stmt = $conn->prepare('DELETE FROM users WHERE id = ?');
+                if ($stmt) {
+                    $stmt->bind_param('i', $user_id);
+                    try {
+                        $stmt->execute();
+                        if ($stmt->affected_rows > 0) {
+                            appLogActivity($conn, 'DELETE_USER', 'Deleted user account for ' . trim((string) ($userRecord['full_name'] ?? ('user #' . $user_id))), 'users', $user_id);
+                            $_SESSION['success_message'] = 'User deleted successfully';
+                            header('Location: users.php');
+                            exit();
+                        }
+                        $error = 'User not found or already deleted';
+                    } catch (mysqli_sql_exception $e) {
+                        if ((int) $e->getCode() === 1451) {
+                            $deactivateStmt = $conn->prepare('UPDATE users SET is_active = 0 WHERE id = ?');
+                            if ($deactivateStmt) {
+                                $deactivateStmt->bind_param('i', $user_id);
+                                $deactivateStmt->execute();
+
+                                if ($deactivateStmt->affected_rows > 0 || (int) ($userRecord['is_active'] ?? 0) === 0) {
+                                    appLogActivity($conn, 'DEACTIVATE_USER', 'Deactivated linked user account for ' . trim((string) ($userRecord['full_name'] ?? ('user #' . $user_id))), 'users', $user_id);
+                                    $_SESSION['success_message'] = (int) ($userRecord['is_active'] ?? 0) === 0
+                                        ? 'This user is already inactive. Linked records still prevent deletion'
+                                        : 'User has linked records, so the account was deactivated instead of deleted';
+                                    header('Location: users.php');
+                                    exit();
+                                }
+                            }
+
+                            $error = 'Unable to delete this user because linked records exist, and automatic deactivation failed.';
+                        } else {
+                            throw $e;
+                        }
+                    }
+                } else {
+                    $error = 'Could not prepare delete query';
+                }
             }
         }
     }
@@ -181,7 +214,7 @@ if (!$users) {
     <div id="successToast" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" style="font-size: 1.1rem; padding: 1rem; min-width: 360px;">
         <div class="d-flex">
             <div class="toast-body">
-                <i class="fas fa-check-circle me-2"></i> <?php echo htmlspecialchars(formatSuccessMessage($success_message)); ?>
+                <i class="fas fa-check-circle me-2"></i> <?php echo htmlspecialchars($success_message); ?>
             </div>
             <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
         </div>
@@ -201,7 +234,7 @@ if (!$users) {
 ]); ?>
 
 <?php if ($message): ?>
-<div class="alert alert-success"><?php echo htmlspecialchars(formatSuccessMessage($message)); ?></div>
+<div class="alert alert-success"><?php echo htmlspecialchars($message); ?></div>
 <?php endif; ?>
 
 <?php if ($error): ?>

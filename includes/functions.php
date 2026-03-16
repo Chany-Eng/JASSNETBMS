@@ -1,12 +1,22 @@
 <?php
+require_once __DIR__ . '/../config/config.php';
+
 // Keep legacy pages on the same session cookie used by the MVC entry points.
 if (session_status() === PHP_SESSION_NONE) {
-    session_name('JASSNET_SESSION');
+    session_name(defined('SESSION_NAME') ? SESSION_NAME : 'JASSNET_SESSION');
     session_start();
 }
 
-// Include config
+// Include legacy database config
 require_once __DIR__ . '/../config.php';
+
+if (defined('SESSION_TIMEOUT') && isset($_SESSION['last_activity']) && (time() - (int) $_SESSION['last_activity']) > SESSION_TIMEOUT) {
+    $appUrl = defined('APP_URL') ? APP_URL : '';
+    header('Location: ' . $appUrl . '/logout.php?reason=inactive');
+    exit();
+}
+
+$_SESSION['last_activity'] = time();
 
 // Function to check if user is logged in
 function isLoggedIn() {

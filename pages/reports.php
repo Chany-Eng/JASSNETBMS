@@ -302,7 +302,7 @@ $report_chart = [
                     <h5 class="mb-0"><i class="fas fa-filter"></i> Report Filters</h5>
                     <div class="d-flex gap-2 flex-wrap report-print-toolbar">
                         <button type="button" class="btn btn-outline-dark btn-sm" onclick="window.print()"><i class="fas fa-print me-2"></i>Print Report</button>
-                        <a href="?export=income&format=pdf&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-outline-danger btn-sm"><i class="fas fa-file-pdf me-2"></i>Quick PDF</a>
+                        <a href="?export=income&format=pdf&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-outline-danger btn-sm" data-no-loader><i class="fas fa-file-pdf me-2"></i>Quick PDF</a>
                         <a href="?start_date=<?php echo date('Y-m-d'); ?>&end_date=<?php echo date('Y-m-d'); ?>" class="btn btn-outline-primary btn-sm">Today</a>
                         <a href="?start_date=<?php echo date('Y-m-d', strtotime('monday this week')); ?>&end_date=<?php echo date('Y-m-d'); ?>" class="btn btn-outline-primary btn-sm">This Week</a>
                         <a href="?start_date=<?php echo date('Y-m-01'); ?>&end_date=<?php echo date('Y-m-d'); ?>" class="btn btn-outline-primary btn-sm">This Month</a>
@@ -459,9 +459,9 @@ $report_chart = [
             <div class="card-header">
                 <h5><i class="fas fa-dollar-sign"></i> Income Report</h5>
                 <div class="d-flex gap-2 flex-wrap">
-                    <a href="?export=income&format=csv&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-primary">Export CSV</a>
-                    <a href="?export=income&format=excel&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-success">Export Excel</a>
-                    <a href="?export=income&format=pdf&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-danger">Export PDF</a>
+                    <a href="?export=income&format=csv&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-primary" data-no-loader>Export CSV</a>
+                    <a href="?export=income&format=excel&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-success" data-no-loader>Export Excel</a>
+                    <a href="?export=income&format=pdf&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-danger" data-no-loader>Export PDF</a>
                 </div>
             </div>
             <div class="card-body">
@@ -498,9 +498,9 @@ $report_chart = [
             <div class="card-header">
                 <h5><i class="fas fa-receipt"></i> Expense Report</h5>
                 <div class="d-flex gap-2 flex-wrap">
-                    <a href="?export=expenses&format=csv&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-primary">Export CSV</a>
-                    <a href="?export=expenses&format=excel&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-success">Export Excel</a>
-                    <a href="?export=expenses&format=pdf&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-danger">Export PDF</a>
+                    <a href="?export=expenses&format=csv&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-primary" data-no-loader>Export CSV</a>
+                    <a href="?export=expenses&format=excel&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-success" data-no-loader>Export Excel</a>
+                    <a href="?export=expenses&format=pdf&start_date=<?php echo $start_date; ?>&end_date=<?php echo $end_date; ?>" class="btn btn-sm btn-outline-danger" data-no-loader>Export PDF</a>
                 </div>
             </div>
             <div class="card-body">
@@ -546,9 +546,9 @@ $report_chart = [
             <div class="card-header">
                 <h5><i class="fas fa-boxes"></i> Inventory Report</h5>
                 <div class="d-flex gap-2 flex-wrap">
-                    <a href="?export=inventory&format=csv" class="btn btn-sm btn-outline-primary">Export CSV</a>
-                    <a href="?export=inventory&format=excel" class="btn btn-sm btn-outline-success">Export Excel</a>
-                    <a href="?export=inventory&format=pdf" class="btn btn-sm btn-outline-danger">Export PDF</a>
+                    <a href="?export=inventory&format=csv" class="btn btn-sm btn-outline-primary" data-no-loader>Export CSV</a>
+                    <a href="?export=inventory&format=excel" class="btn btn-sm btn-outline-success" data-no-loader>Export Excel</a>
+                    <a href="?export=inventory&format=pdf" class="btn btn-sm btn-outline-danger" data-no-loader>Export PDF</a>
                 </div>
             </div>
             <div class="card-body">

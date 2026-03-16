@@ -19,14 +19,11 @@ $canViewPayroll = !empty($permissions['can_view_payroll']);
 $recentActivities = $recent_activities ?? [];
 $reportLinks = $report_links ?? [];
 $roleNotices = $role_notices ?? [];
-$canViewRecentActivity = $hasRole(['Super Admin']);
 $userRoles = array_values(array_filter(array_map('trim', explode(',', (string) ($user['role'] ?? '')))));
 if ($userRoles === []) {
     $userRoles = ['User'];
 }
 
-$userRoleSummary = implode(' | ', $userRoles);
-$userRoleCount = count($userRoles);
 $hasRole = static function (array $rolesToCheck) use ($userRoles): bool {
     $normalizedRoles = array_map('strtolower', $userRoles);
     foreach ($rolesToCheck as $roleToCheck) {
@@ -36,6 +33,11 @@ $hasRole = static function (array $rolesToCheck) use ($userRoles): bool {
     }
     return false;
 };
+
+$canViewRecentActivity = $hasRole(['Super Admin']);
+$canViewReports = $hasRole(['Director', 'Accountant', 'Super Admin']);
+$userRoleSummary = implode(' | ', $userRoles);
+$userRoleCount = count($userRoles);
 
 $formatCurrency = static function ($amount): string {
     return 'Tshs. ' . number_format((float) $amount, 2);
@@ -811,8 +813,7 @@ $statusTone = static function (string $status): string {
                     <div class="row align-items-center g-3 position-relative">
                         <div class="col-lg-8">
                             <div class="mb-2 text-uppercase small fw-semibold opacity-75">JASSNET Control Center</div>
-                            <h2 class="mb-2">Professional Operations Dashboard</h2>
-                            <div class="opacity-75">Income, expense approvals, inventory movement, and station deployment metrics in one responsive workspace.</div>
+                            <h2 class="mb-2">Operations Dashboard</h2>
                             <div class="dash-role-list">
                                 <span class="dash-role-pill"><i class="fas fa-user"></i> <?= htmlspecialchars($user['full_name'] ?? ($user['username'] ?? 'User')) ?></span>
                                 <?php foreach ($userRoles as $roleLabel): ?>
@@ -1226,6 +1227,7 @@ $statusTone = static function (string $status): string {
                 </div>
             </div>
             <?php endif; ?>
+            <?php if ($canViewReports): ?>
             <div class="<?= $canViewRecentActivity ? 'col-xl-5' : 'col-12' ?>">
                 <div class="dash-panel h-100">
                     <div class="dash-panel-header">
@@ -1253,6 +1255,7 @@ $statusTone = static function (string $status): string {
                     </div>
                 </div>
             </div>
+            <?php endif; ?>
         </div>
 
         <div class="row mt-4">
@@ -1273,10 +1276,6 @@ $statusTone = static function (string $status): string {
                     <div class="dash-mini-card">
                         <div class="label">Today</div>
                         <div class="value"><?= date('d M Y') ?></div>
-                    </div>
-                    <div class="dash-mini-card">
-                        <div class="label">Visible Modules</div>
-                        <div class="value"><?= number_format(count($statCards)) ?> Cards</div>
                     </div>
                 </div>
             </div>

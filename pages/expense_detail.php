@@ -18,6 +18,7 @@ $payouts = [];
 $latestPayout = null;
 $payoutSummary = null;
 $receiptPreviewType = '';
+$approvalSteps = [];
 
 snippeEnsurePayoutTables($conn);
 expenseEnsureWorkflowSchema($conn);
@@ -76,6 +77,76 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     }
 }
 
+$isRejectedExpense = $expense_request && (string) ($expense_request['status'] ?? '') === 'Rejected';
+$rejectionReason = trim((string) ($expense_request['rejection_comment'] ?? ''));
+$rejectedByStage = '';
+
+if ($isRejectedExpense) {
+    $rejectedByStage = !empty($expense_request['director_comment']) ? 'director' : 'manager';
+}
+
+$buildApprovalStep = static function (string $stage) use ($expense_request, $isRejectedExpense, $rejectedByStage, $rejectionReason): array {
+    $comment = '';
+    $badgeClass = 'pending';
+    $labelHtml = '<span class="text-warning">Pending</span>';
+
+    if ($stage === 'manager') {
+        $comment = !empty($expense_request['manager_comment']) ? nl2br(htmlspecialchars((string) $expense_request['manager_comment'])) : 'No manager comment yet.';
+        if ($isRejectedExpense && $rejectedByStage === 'manager') {
+            $badgeClass = 'rejected';
+            $labelHtml = '<span class="text-danger">Rejected</span>';
+            $comment = $rejectionReason !== '' ? nl2br(htmlspecialchars($rejectionReason)) : $comment;
+        } elseif (!empty($expense_request['manager_approved'])) {
+            $badgeClass = 'approved';
+            $labelHtml = '<span class="text-success">Approved</span>';
+        }
+    }
+
+    if ($stage === 'director') {
+        $comment = !empty($expense_request['director_comment']) ? nl2br(htmlspecialchars((string) $expense_request['director_comment'])) : 'No director comment yet.';
+        if ($isRejectedExpense && $rejectedByStage === 'manager') {
+            $badgeClass = 'stopped';
+            $labelHtml = '<span class="text-secondary">Stopped</span>';
+            $comment = 'Director stage did not continue because the manager rejected this request.';
+        } elseif ($isRejectedExpense && $rejectedByStage === 'director') {
+            $badgeClass = 'rejected';
+            $labelHtml = '<span class="text-danger">Rejected</span>';
+            $comment = $rejectionReason !== '' ? nl2br(htmlspecialchars($rejectionReason)) : $comment;
+        } elseif (!empty($expense_request['director_approved'])) {
+            $badgeClass = 'approved';
+            $labelHtml = '<span class="text-success">Approved</span>';
+        }
+    }
+
+    if ($stage === 'accountant') {
+        $comment = !empty($expense_request['accountant_comment']) ? nl2br(htmlspecialchars((string) $expense_request['accountant_comment'])) : 'No accountant comment yet.';
+        if ($isRejectedExpense) {
+            $badgeClass = 'stopped';
+            $labelHtml = '<span class="text-secondary">Stopped</span>';
+            $comment = 'Accountant processing did not continue because this request was rejected.';
+        } elseif (!empty($expense_request['accountant_processed'])) {
+            $badgeClass = 'approved';
+            $labelHtml = '<span class="text-success">Fully Paid</span>';
+        } else {
+            $labelHtml = '<span class="text-warning">Awaiting Balance Clearance</span>';
+        }
+    }
+
+    return [
+        'badgeClass' => $badgeClass,
+        'labelHtml' => $labelHtml,
+        'commentHtml' => $comment,
+    ];
+};
+
+if ($expense_request) {
+    $approvalSteps = [
+        'manager' => $buildApprovalStep('manager'),
+        'director' => $buildApprovalStep('director'),
+        'accountant' => $buildApprovalStep('accountant'),
+    ];
+}
+
 include '../includes/header.php';
 ?>
 
@@ -98,11 +169,6 @@ include '../includes/header.php';
         <?php endif; ?>
 
         <?php if ($expense_request): ?>
-            <?php if ($expense_request['status'] === 'Rejected'): ?>
-                <div class="alert alert-danger border-0 shadow-sm">
-                    <strong>Expense request rejected.</strong> This request will remain stopped until a new valid request is submitted or the rejected request is edited and resubmitted where allowed.
-                </div>
-            <?php endif; ?>
 
             <!-- Request Information Card -->
             <div class="row mb-4">
@@ -191,38 +257,38 @@ include '../includes/header.php';
                             <div class="row text-center">
                                 <div class="col-md-4">
                                     <div class="approval-step">
-                                        <div class="approval-badge <?php echo $expense_request['manager_approved'] ? 'approved' : 'pending'; ?>">
+                                        <div class="approval-badge <?php echo htmlspecialchars((string) ($approvalSteps['manager']['badgeClass'] ?? 'pending')); ?>">
                                             <i class="fas fa-user-tie"></i>
                                         </div>
                                         <p class="mt-2"><strong>Manager Approval</strong></p>
                                         <p class="text-muted">
-                                            <?php echo $expense_request['manager_approved'] ? '<span class="text-success">✓ Approved</span>' : '<span class="text-warning">Pending</span>'; ?>
+                                            <?php echo $approvalSteps['manager']['labelHtml'] ?? '<span class="text-warning">Pending</span>'; ?>
                                         </p>
-                                        <div class="small text-muted"><?php echo !empty($expense_request['manager_comment']) ? nl2br(htmlspecialchars($expense_request['manager_comment'])) : 'No manager comment yet.'; ?></div>
+                                        <div class="small text-muted"><?php echo $approvalSteps['manager']['commentHtml'] ?? 'No manager comment yet.'; ?></div>
                                     </div>
                                 </div>
                                 <div class="col-md-4">
                                     <div class="approval-step">
-                                        <div class="approval-badge <?php echo $expense_request['director_approved'] ? 'approved' : 'pending'; ?>">
+                                        <div class="approval-badge <?php echo htmlspecialchars((string) ($approvalSteps['director']['badgeClass'] ?? 'pending')); ?>">
                                             <i class="fas fa-crown"></i>
                                         </div>
                                         <p class="mt-2"><strong>Director Approval</strong></p>
                                         <p class="text-muted">
-                                            <?php echo $expense_request['director_approved'] ? '<span class="text-success">✓ Approved</span>' : '<span class="text-warning">Pending</span>'; ?>
+                                            <?php echo $approvalSteps['director']['labelHtml'] ?? '<span class="text-warning">Pending</span>'; ?>
                                         </p>
-                                        <div class="small text-muted"><?php echo !empty($expense_request['director_comment']) ? nl2br(htmlspecialchars($expense_request['director_comment'])) : 'No director comment yet.'; ?></div>
+                                        <div class="small text-muted"><?php echo $approvalSteps['director']['commentHtml'] ?? 'No director comment yet.'; ?></div>
                                     </div>
                                 </div>
                                 <div class="col-md-4">
                                     <div class="approval-step">
-                                        <div class="approval-badge <?php echo $expense_request['accountant_processed'] ? 'approved' : 'pending'; ?>">
+                                        <div class="approval-badge <?php echo htmlspecialchars((string) ($approvalSteps['accountant']['badgeClass'] ?? 'pending')); ?>">
                                             <i class="fas fa-calculator"></i>
                                         </div>
                                         <p class="mt-2"><strong>Accountant Processing</strong></p>
                                         <p class="text-muted">
-                                            <?php echo $expense_request['accountant_processed'] ? '<span class="text-success">✓ Fully Paid</span>' : '<span class="text-warning">Awaiting Balance Clearance</span>'; ?>
+                                            <?php echo $approvalSteps['accountant']['labelHtml'] ?? '<span class="text-warning">Awaiting Balance Clearance</span>'; ?>
                                         </p>
-                                        <div class="small text-muted"><?php echo !empty($expense_request['accountant_comment']) ? nl2br(htmlspecialchars($expense_request['accountant_comment'])) : 'No accountant comment yet.'; ?></div>
+                                        <div class="small text-muted"><?php echo $approvalSteps['accountant']['commentHtml'] ?? 'No accountant comment yet.'; ?></div>
                                     </div>
                                 </div>
                             </div>
@@ -433,6 +499,16 @@ include '../includes/header.php';
 .approval-badge.pending {
     background: linear-gradient(135deg, #ffa500 0%, #ff9800 100%);
     box-shadow: 0 4px 12px rgba(255, 152, 0, 0.3);
+}
+
+.approval-badge.rejected {
+    background: linear-gradient(135deg, #d32f2f 0%, #b71c1c 100%);
+    box-shadow: 0 4px 12px rgba(211, 47, 47, 0.28);
+}
+
+.approval-badge.stopped {
+    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+    box-shadow: 0 4px 12px rgba(75, 85, 99, 0.24);
 }
 
 .approval-step {
